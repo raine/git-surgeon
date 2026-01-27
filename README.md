@@ -2,9 +2,10 @@
 
 Surgical, non-interactive git hunk control for AI agents.
 
-Without hunk-level staging, an AI agent that needs to commit two independent
-changes in the same file has to edit one change out, commit, then restore it.
-git-surgeon lets the agent stage each hunk separately without gymnastics.
+AI coding agents write code across multiple files but commit everything at once.
+`git-surgeon` gives them the same selective staging power as `git add -p`, but
+without the interactive prompts. Agents can list hunks, stage specific changes
+by ID, and even split a single hunk across commits using line ranges.
 
 ## Quick start
 
@@ -21,7 +22,7 @@ cargo install git-surgeon
 brew install raine/git-surgeon/git-surgeon
 ```
 
-### 2. Install the Claude Code plugin
+### 2. Install the Claude Code Skill
 
 ```bash
 # Register the plugin source

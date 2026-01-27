@@ -46,6 +46,7 @@ to stage individual hunks instead of entire files.
 - [`discard`](#discard) — Discard working tree changes for hunks
 - [`fixup`](#fixup) — Fold staged changes into an earlier commit
 - [`undo`](#undo) — Reverse-apply hunks from a commit
+- [`split`](#split) — Split a commit into multiple commits by hunk selection
 
 ---
 
@@ -216,6 +217,38 @@ git-surgeon undo a1b2c3d --from HEAD --lines 2-10
 The changes appear as unstaged modifications in the working tree. Fails
 gracefully if context lines have changed since the commit (the patch no longer
 applies cleanly).
+
+---
+
+### `split`
+
+Splits an existing commit into multiple commits by selecting which hunks go into
+each new commit. Works on HEAD (direct reset) or earlier commits (via rebase).
+
+```bash
+# Split HEAD into two commits
+git-surgeon split HEAD \
+  --pick a1b2c3d e4f5678 --message "add pagination" \
+  --rest-message "filter deleted users"
+
+# With line ranges (id:range inline syntax)
+git-surgeon split abc1234 \
+  --pick a1b2c3d:1-11 e4f5678 f9g0h1i:5-20 \
+  --message "add pagination"
+
+# Multiple splits (more than two commits)
+git-surgeon split abc1234 \
+  --pick a1b2c3d --message "add pagination" \
+  --pick e4f5678 --message "filter deleted users" \
+  --rest-message "remaining cleanup"
+```
+
+Each `--pick` group specifies hunk IDs (with optional `:start-end` line ranges)
+followed by a `--message`. Remaining unpicked hunks are committed with
+`--rest-message` (defaults to the original commit message if omitted).
+
+Requires a clean working tree. For non-HEAD commits, uses interactive rebase
+with `--autostash`.
 
 ## How hunk IDs work
 

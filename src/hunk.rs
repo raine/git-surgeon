@@ -518,6 +518,199 @@ pub fn fixup(commit: &str) -> Result<()> {
     Ok(())
 }
 
+/// Split a commit into multiple commits by hunk selection.
+pub fn split(
+    commit: &str,
+    pick_groups: &[crate::PickGroup],
+    rest_message: Option<&str>,
+) -> Result<()> {
+    use std::collections::HashSet;
+    use std::process::Command;
+
+    // Check working tree is clean
+    let status = Command::new("git")
+        .args(["status", "--porcelain"])
+        .output()
+        .context("failed to check git status")?;
+    if !String::from_utf8_lossy(&status.stdout).trim().is_empty() {
+        anyhow::bail!("working tree is dirty; commit or stash changes before splitting");
+    }
+
+    // Check no rebase in progress
+    for dir_name in ["rebase-merge", "rebase-apply"] {
+        let check = Command::new("git")
+            .args(["rev-parse", "--git-path", dir_name])
+            .output()
+            .context("failed to check rebase state")?;
+        let dir = String::from_utf8_lossy(&check.stdout).trim().to_string();
+        if std::path::Path::new(&dir).exists() {
+            anyhow::bail!("rebase already in progress");
+        }
+    }
+
+    // Resolve target commit
+    let target_sha = crate::diff::run_git_cmd(
+        Command::new("git").args(["rev-parse", commit]),
+    )?;
+    let target_sha = target_sha.trim().to_string();
+
+    let head_sha = crate::diff::run_git_cmd(
+        Command::new("git").args(["rev-parse", "HEAD"]),
+    )?;
+    let head_sha = head_sha.trim().to_string();
+
+    let is_head = target_sha == head_sha;
+
+    // Get hunks from the target commit and validate all pick IDs exist
+    let diff_output = crate::diff::run_git_diff_commit(&target_sha, None)?;
+    let hunks = crate::diff::parse_diff(&diff_output);
+    let identified = assign_ids(&hunks);
+
+    // Validate all referenced IDs exist
+    for group in pick_groups {
+        for (id, _) in &group.ids {
+            if !identified.iter().any(|(hid, _)| hid == id) {
+                anyhow::bail!("hunk {} not found in commit {}", id, &target_sha[..7.min(target_sha.len())]);
+            }
+        }
+    }
+
+    // Get original commit message for rest-message default
+    let original_message = crate::diff::run_git_cmd(
+        Command::new("git").args(["log", "-1", "--format=%B", &target_sha]),
+    )?;
+    let original_message = original_message.trim();
+    let rest_msg = rest_message.unwrap_or(original_message);
+
+    // Collect all picked IDs to determine "rest"
+    let mut all_picked: HashSet<String> = HashSet::new();
+    for group in pick_groups {
+        for (id, _) in &group.ids {
+            all_picked.insert(id.clone());
+        }
+    }
+
+    if !is_head {
+        // Non-HEAD: set up interactive rebase
+        let is_root = Command::new("git")
+            .args(["rev-parse", "--verify", &format!("{}^", target_sha)])
+            .output()
+            .map(|o| !o.status.success())
+            .unwrap_or(false);
+
+        // We need a custom sequence editor that marks the target commit as "edit"
+        let short_sha = &target_sha[..7.min(target_sha.len())];
+        // Use sed to change "pick <sha>" to "edit <sha>" for the target commit
+        let sed_script = format!("s/^pick {} /edit {} /", short_sha, short_sha);
+
+        let mut rebase_cmd = Command::new("git");
+        rebase_cmd.args(["rebase", "-i", "--autostash"]);
+        if is_root {
+            rebase_cmd.arg("--root");
+        } else {
+            rebase_cmd.arg(&format!("{}~1", target_sha));
+        }
+        rebase_cmd.env("GIT_SEQUENCE_EDITOR", format!("sed -i.bak '{}'", sed_script));
+
+        let output = rebase_cmd.output().context("failed to start rebase")?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("rebase failed: {}", stderr);
+        }
+
+        // Now we should be paused at the target commit. Reset it.
+        let output = Command::new("git")
+            .args(["reset", "HEAD~"])
+            .output()
+            .context("failed to reset commit")?;
+        if !output.status.success() {
+            anyhow::bail!("git reset failed: {}", String::from_utf8_lossy(&output.stderr));
+        }
+    } else {
+        // HEAD: just reset
+        let output = Command::new("git")
+            .args(["reset", "HEAD~"])
+            .output()
+            .context("failed to reset HEAD")?;
+        if !output.status.success() {
+            anyhow::bail!("git reset failed: {}", String::from_utf8_lossy(&output.stderr));
+        }
+    }
+
+    // Now changes are in the working tree. Stage and commit each pick group.
+    // We need to re-read the diff since changes are now unstaged.
+    for group in pick_groups {
+        // For each hunk in this group, build patch and stage it
+        let diff_output = crate::diff::run_git_diff(false, None)?;
+        let hunks = crate::diff::parse_diff(&diff_output);
+        let identified = assign_ids(&hunks);
+
+        let mut combined_patch = String::new();
+        for (id, lines_range) in &group.ids {
+            let (_, hunk) = identified
+                .iter()
+                .find(|(hid, _)| hid == id)
+                .ok_or_else(|| anyhow::anyhow!("hunk {} not found in unstaged changes", id))?;
+
+            let patched_hunk = if let Some((start, end)) = lines_range {
+                slice_hunk(hunk, *start, *end, false)?
+            } else {
+                (*hunk).clone()
+            };
+            combined_patch.push_str(&build_patch(&patched_hunk));
+        }
+
+        apply_patch(&combined_patch, &ApplyMode::Stage)?;
+
+        // Commit
+        let output = Command::new("git")
+            .args(["commit", "-m", &group.message])
+            .output()
+            .context("failed to commit")?;
+        if !output.status.success() {
+            anyhow::bail!("git commit failed: {}", String::from_utf8_lossy(&output.stderr));
+        }
+        eprintln!("committed: {}", group.message);
+    }
+
+    // Stage and commit remaining changes (if any)
+    let remaining_diff = crate::diff::run_git_diff(false, None)?;
+    if !remaining_diff.trim().is_empty() {
+        let remaining_hunks = crate::diff::parse_diff(&remaining_diff);
+        let mut combined_patch = String::new();
+        for hunk in &remaining_hunks {
+            combined_patch.push_str(&build_patch(hunk));
+        }
+        apply_patch(&combined_patch, &ApplyMode::Stage)?;
+
+        let output = Command::new("git")
+            .args(["commit", "-m", rest_msg])
+            .output()
+            .context("failed to commit remaining")?;
+        if !output.status.success() {
+            anyhow::bail!("git commit failed: {}", String::from_utf8_lossy(&output.stderr));
+        }
+        eprintln!("committed: {}", rest_msg);
+    }
+
+    // Continue rebase if non-HEAD
+    if !is_head {
+        let output = Command::new("git")
+            .args(["rebase", "--continue"])
+            .output()
+            .context("failed to continue rebase")?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!("error: rebase continue failed");
+            eprintln!("resolve conflicts and run: git rebase --continue");
+            eprintln!("or abort with: git rebase --abort");
+            anyhow::bail!("rebase continue failed: {}", stderr);
+        }
+    }
+
+    Ok(())
+}
+
 /// Apply a patch using git apply.
 fn apply_patch(patch: &str, mode: &ApplyMode) -> Result<()> {
     use std::io::Write;

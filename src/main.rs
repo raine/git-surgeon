@@ -90,6 +90,91 @@ enum Commands {
         #[arg(long)]
         from: String,
     },
+    /// Split a commit into multiple commits by hunk selection
+    #[command(disable_help_flag = false)]
+    Split {
+        /// Commit to split (e.g. HEAD, abc1234)
+        commit: String,
+        /// Remaining args parsed manually: --pick <ids...> --message <msg> [--rest-message <msg>]
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+}
+
+/// A group of hunk IDs (with optional line ranges) and a commit message.
+pub struct PickGroup {
+    pub ids: Vec<(String, Option<(usize, usize)>)>,
+    pub message: String,
+}
+
+/// Parse the trailing args of the split command into pick groups and optional rest-message.
+fn parse_split_args(args: &[String]) -> anyhow::Result<(Vec<PickGroup>, Option<String>)> {
+    let mut groups: Vec<PickGroup> = Vec::new();
+    let mut rest_message: Option<String> = None;
+    let mut i = 0;
+
+    // Current state
+    let mut current_ids: Vec<(String, Option<(usize, usize)>)> = Vec::new();
+
+    while i < args.len() {
+        let arg = &args[i];
+        if arg == "--pick" {
+            // If we already have IDs collected but no message yet, that's an error
+            // (handled when we see the next --pick or --message)
+            // Actually: flush is done when we see --message
+            i += 1;
+            // Collect IDs until next flag
+            while i < args.len() && !args[i].starts_with("--") {
+                let id_str = &args[i];
+                let parsed = parse_pick_id(id_str)?;
+                current_ids.push(parsed);
+                i += 1;
+            }
+            if current_ids.is_empty() {
+                anyhow::bail!("--pick requires at least one hunk ID");
+            }
+        } else if arg == "--message" {
+            i += 1;
+            if i >= args.len() {
+                anyhow::bail!("--message requires a value");
+            }
+            if current_ids.is_empty() {
+                anyhow::bail!("--message without preceding --pick");
+            }
+            groups.push(PickGroup {
+                ids: std::mem::take(&mut current_ids),
+                message: args[i].clone(),
+            });
+            i += 1;
+        } else if arg == "--rest-message" {
+            i += 1;
+            if i >= args.len() {
+                anyhow::bail!("--rest-message requires a value");
+            }
+            rest_message = Some(args[i].clone());
+            i += 1;
+        } else {
+            anyhow::bail!("unexpected argument: {}", arg);
+        }
+    }
+
+    if !current_ids.is_empty() {
+        anyhow::bail!("--pick group missing --message");
+    }
+    if groups.is_empty() {
+        anyhow::bail!("at least one --pick ... --message pair is required");
+    }
+
+    Ok((groups, rest_message))
+}
+
+fn parse_pick_id(s: &str) -> anyhow::Result<(String, Option<(usize, usize)>)> {
+    if let Some((id, range)) = s.split_once(':') {
+        let range = parse_line_range(range).map_err(|e| anyhow::anyhow!(e))?;
+        Ok((id.to_string(), Some(range)))
+    } else {
+        Ok((s.to_string(), None))
+    }
 }
 
 fn parse_line_range(s: &str) -> Result<(usize, usize), String> {
@@ -118,6 +203,10 @@ fn main() -> Result<()> {
         Commands::Fixup { commit } => hunk::fixup(&commit)?,
         Commands::Undo { ids, from, lines } => hunk::undo_hunks(&ids, &from, lines)?,
         Commands::UndoFile { files, from } => hunk::undo_files(&files, &from)?,
+        Commands::Split { commit, args } => {
+            let (pick_groups, rest_message) = parse_split_args(&args)?;
+            hunk::split(&commit, &pick_groups, rest_message.as_deref())?
+        }
     }
 
     Ok(())

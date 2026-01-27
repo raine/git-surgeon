@@ -1,6 +1,6 @@
 ---
 name: git-surgeon
-description: Non-interactive hunk-level git staging, unstaging, discarding, undoing, and fixup. Use when selectively staging, unstaging, discarding, or reverting individual diff hunks by ID instead of interactively.
+description: Non-interactive hunk-level git staging, unstaging, discarding, undoing, fixup, and commit splitting. Use when selectively staging, unstaging, discarding, reverting, or splitting individual diff hunks by ID instead of interactively.
 ---
 
 # git-surgeon
@@ -57,6 +57,21 @@ git-surgeon undo <id> --from <commit> --lines 2-10
 
 # Undo all changes to specific files from a commit
 git-surgeon undo-file <file1> <file2> ... --from <commit>
+
+# Split a commit into multiple commits by hunk selection
+git-surgeon split HEAD \
+  --pick <id1> <id2> --message "first commit" \
+  --rest-message "remaining changes"
+
+# Split with line ranges
+git-surgeon split <commit> \
+  --pick <id>:1-11 <id2> --message "partial split"
+
+# Split into three+ commits
+git-surgeon split HEAD \
+  --pick <id1> --message "first" \
+  --pick <id2> --message "second" \
+  --rest-message "rest"
 ```
 
 ## Typical workflow
@@ -80,6 +95,14 @@ git-surgeon undo-file <file1> <file2> ... --from <commit>
 2. Undo specific hunks: `git-surgeon undo <id> --from <sha>`
 3. Or undo entire files: `git-surgeon undo-file src/main.rs --from <sha>`
 4. Changes appear as unstaged modifications in the working tree
+
+## Splitting commits
+
+1. List hunks in the commit: `git-surgeon hunks --commit <sha>`
+2. Split by picking hunks: `git-surgeon split <sha> --pick <id1> --message "first" --rest-message "second"`
+3. Use `id:range` syntax for partial hunks: `--pick <id>:5-20`
+4. Works on HEAD (direct reset) or earlier commits (via rebase)
+5. Requires a clean working tree
 
 ## Hunk IDs
 

@@ -57,6 +57,14 @@ enum Commands {
         #[arg(long)]
         from: String,
     },
+    /// Undo all changes to specific files from a commit
+    UndoFile {
+        /// File paths to undo
+        files: Vec<String>,
+        /// Commit to undo files from
+        #[arg(long)]
+        from: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -69,6 +77,7 @@ fn main() -> Result<()> {
         Commands::Unstage { ids } => hunk::apply_hunks(&ids, hunk::ApplyMode::Unstage)?,
         Commands::Discard { ids } => hunk::apply_hunks(&ids, hunk::ApplyMode::Discard)?,
         Commands::Undo { ids, from } => hunk::undo_hunks(&ids, &from)?,
+        Commands::UndoFile { files, from } => hunk::undo_files(&files, &from)?,
     }
 
     Ok(())

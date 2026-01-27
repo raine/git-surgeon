@@ -181,6 +181,30 @@ pub fn undo_hunks(ids: &[String], commit: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn undo_files(files: &[String], commit: &str) -> Result<()> {
+    let diff_output = crate::diff::run_git_diff_commit(commit, None)?;
+    let hunks = crate::diff::parse_diff(&diff_output);
+
+    let mut combined_patch = String::new();
+    let mut matched_files = std::collections::HashSet::new();
+    for hunk in &hunks {
+        if files.iter().any(|f| f == &hunk.file) {
+            combined_patch.push_str(&build_patch(hunk));
+            matched_files.insert(&hunk.file);
+        }
+    }
+
+    for file in files {
+        if !matched_files.contains(&file) {
+            anyhow::bail!("file {} not found in commit {}", file, commit);
+        }
+        eprintln!("{}", file);
+    }
+
+    apply_patch(&combined_patch, &ApplyMode::Discard)?;
+    Ok(())
+}
+
 /// Reconstruct a minimal unified diff patch for a single hunk.
 fn build_patch(hunk: &DiffHunk) -> String {
     let mut patch = String::new();

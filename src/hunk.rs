@@ -40,8 +40,11 @@ pub fn assign_ids(hunks: &[DiffHunk]) -> Vec<(String, &DiffHunk)> {
     result
 }
 
-pub fn list_hunks(staged: bool, file: Option<&str>) -> Result<()> {
-    let diff_output = crate::diff::run_git_diff(staged, file)?;
+pub fn list_hunks(staged: bool, file: Option<&str>, commit: Option<&str>) -> Result<()> {
+    let diff_output = match commit {
+        Some(c) => crate::diff::run_git_diff_commit(c, file)?,
+        None => crate::diff::run_git_diff(staged, file)?,
+    };
     let hunks = crate::diff::parse_diff(&diff_output);
     let identified = assign_ids(&hunks);
 
@@ -94,15 +97,28 @@ pub fn list_hunks(staged: bool, file: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-pub fn show_hunk(id: &str) -> Result<()> {
-    let hunk = find_hunk_by_id(id, false)
-        .or_else(|_| find_hunk_by_id(id, true))?;
+pub fn show_hunk(id: &str, commit: Option<&str>) -> Result<()> {
+    let hunk = match commit {
+        Some(c) => find_hunk_in_commit(id, c)?,
+        None => find_hunk_by_id(id, false).or_else(|_| find_hunk_by_id(id, true))?,
+    };
 
     println!("{}", hunk.header);
     for line in &hunk.lines {
         println!("{}", line);
     }
     Ok(())
+}
+
+fn find_hunk_in_commit(id: &str, commit: &str) -> Result<DiffHunk> {
+    let diff_output = crate::diff::run_git_diff_commit(commit, None)?;
+    let hunks = crate::diff::parse_diff(&diff_output);
+    let identified = assign_ids(&hunks);
+    identified
+        .into_iter()
+        .find(|(hunk_id, _)| hunk_id == id)
+        .map(|(_, hunk)| hunk.clone())
+        .ok_or_else(|| anyhow::anyhow!("hunk {} not found in commit {}", id, commit))
 }
 
 /// Find a hunk by ID in either staged or unstaged diff.
@@ -142,6 +158,26 @@ pub fn apply_hunks(ids: &[String], mode: ApplyMode) -> Result<()> {
     }
 
     apply_patch(&combined_patch, &mode)?;
+    Ok(())
+}
+
+pub fn undo_hunks(ids: &[String], commit: &str) -> Result<()> {
+    let diff_output = crate::diff::run_git_diff_commit(commit, None)?;
+    let hunks = crate::diff::parse_diff(&diff_output);
+    let identified = assign_ids(&hunks);
+
+    let mut combined_patch = String::new();
+    for id in ids {
+        let (_, hunk) = identified
+            .iter()
+            .find(|(hunk_id, _)| hunk_id == id)
+            .ok_or_else(|| anyhow::anyhow!("hunk {} not found in commit {}", id, commit))?;
+
+        combined_patch.push_str(&build_patch(hunk));
+        eprintln!("{}", id);
+    }
+
+    apply_patch(&combined_patch, &ApplyMode::Discard)?;
     Ok(())
 }
 

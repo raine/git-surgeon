@@ -13,19 +13,37 @@ pub struct DiffHunk {
     pub lines: Vec<String>,
 }
 
+const DIFF_FORMAT_ARGS: &[&str] = &["--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/"];
+
 pub fn run_git_diff(staged: bool, file: Option<&str>) -> Result<String> {
     let mut cmd = Command::new("git");
-    cmd.args(["diff", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/"]);
+    cmd.arg("diff");
+    cmd.args(DIFF_FORMAT_ARGS);
     if staged {
         cmd.arg("--cached");
     }
     if let Some(f) = file {
         cmd.arg("--").arg(f);
     }
-    let output = cmd.output().context("failed to run git diff")?;
+    run_git_cmd(&mut cmd)
+}
+
+pub fn run_git_diff_commit(commit: &str, file: Option<&str>) -> Result<String> {
+    let mut cmd = Command::new("git");
+    cmd.args(["show", "--pretty="]);
+    cmd.args(DIFF_FORMAT_ARGS);
+    cmd.arg(commit);
+    if let Some(f) = file {
+        cmd.arg("--").arg(f);
+    }
+    run_git_cmd(&mut cmd)
+}
+
+fn run_git_cmd(cmd: &mut Command) -> Result<String> {
+    let output = cmd.output().context("failed to run git command")?;
     if !output.status.success() {
         anyhow::bail!(
-            "git diff failed: {}",
+            "git command failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
     }

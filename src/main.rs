@@ -22,11 +22,17 @@ enum Commands {
         /// Filter to a specific file
         #[arg(long)]
         file: Option<String>,
+        /// Show hunks from a specific commit
+        #[arg(long)]
+        commit: Option<String>,
     },
     /// Show full diff for a specific hunk
     Show {
         /// Hunk ID
         id: String,
+        /// Look up hunk in a specific commit
+        #[arg(long)]
+        commit: Option<String>,
     },
     /// Stage hunks by ID
     Stage {
@@ -43,17 +49,26 @@ enum Commands {
         /// Hunk IDs to discard
         ids: Vec<String>,
     },
+    /// Undo hunks from a commit, reverse-applying them to the working tree
+    Undo {
+        /// Hunk IDs to undo
+        ids: Vec<String>,
+        /// Commit to undo hunks from
+        #[arg(long)]
+        from: String,
+    },
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Hunks { staged, file } => hunk::list_hunks(staged, file.as_deref())?,
-        Commands::Show { id } => hunk::show_hunk(&id)?,
+        Commands::Hunks { staged, file, commit } => hunk::list_hunks(staged, file.as_deref(), commit.as_deref())?,
+        Commands::Show { id, commit } => hunk::show_hunk(&id, commit.as_deref())?,
         Commands::Stage { ids } => hunk::apply_hunks(&ids, hunk::ApplyMode::Stage)?,
         Commands::Unstage { ids } => hunk::apply_hunks(&ids, hunk::ApplyMode::Unstage)?,
         Commands::Discard { ids } => hunk::apply_hunks(&ids, hunk::ApplyMode::Discard)?,
+        Commands::Undo { ids, from } => hunk::undo_hunks(&ids, &from)?,
     }
 
     Ok(())

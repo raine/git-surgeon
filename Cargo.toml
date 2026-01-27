@@ -2,9 +2,20 @@
 name = "git-surgeon"
 version = "0.1.0"
 edition = "2024"
-authors = [""]
-description = "Non-interactive hunk-level git staging for AI agents"
+authors = ["Raine Virta"]
+description = "Surgical git hunk control for AI agents"
 license = "MIT"
+documentation = "https://github.com/raine/git-surgeon#readme"
+homepage = "https://github.com/raine/git-surgeon"
+repository = "https://github.com/raine/git-surgeon"
+include = [
+    "/src/**/*",
+    "/Cargo.toml",
+    "/Cargo.lock",
+    "/CHANGELOG.md",
+    "/LICENSE",
+    "/README.md",
+]
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
@@ -14,3 +25,8 @@ hex = "0.4"
 
 [dev-dependencies]
 tempfile = "3.14"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

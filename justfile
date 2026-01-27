@@ -49,3 +49,11 @@ test *ARGS: build
     else
         pytest $quiet_flag "$@"
     fi
+
+# Release a new patch version
+release *ARGS:
+    @just _release patch {{ARGS}}
+
+# Internal release helper
+_release bump *ARGS:
+    @cargo-release {{bump}} {{ARGS}}

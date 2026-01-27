@@ -1,31 +1,11 @@
 # git-surgeon
 
-**Non-interactive hunk-level git staging for AI agents**
+Surgical, non-interactive git hunk control for AI agents. Think `git add -p` for
+agents.
 
----
-
-`git add -p` without the interactivity. Gives AI agents and scripts precise,
-hunk-level control over staging, unstaging, discarding, and undoing changes
-using stable content-based IDs.
-
-## Why git-surgeon?
-
-**AI agents can't use interactive tools.** `git add -p` requires human
-keypresses. git-surgeon exposes every hunk as an addressable ID so agents can
-stage exactly what they want in a single command.
-
-**Precise partial commits.** Stage specific hunks across multiple files, leave
-the rest as unstaged changes. No temporary files, no patch editing.
-
-**No more edit-commit-restore loops.** Without hunk-level staging, an AI agent
-that needs to commit two independent changes in the same file has to manually
-edit one change out, commit, then restore the edit and commit again. git-surgeon
-lets the agent stage each hunk separately and commit them in sequence - no file
-editing gymnastics required.
-
-**Stable IDs.** Hunk IDs are derived from content (SHA-1 of file path + hunk
-lines), not line numbers. They survive rebases and line shifts as long as the
-hunk content doesn't change.
+Without hunk-level staging, an AI agent that needs to commit two independent
+changes in the same file has to edit one change out, commit, then restore it.
+git-surgeon lets the agent stage each hunk separately — no gymnastics.
 
 ## Installation
 

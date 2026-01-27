@@ -1,0 +1,149 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  BIN_NAME: git-surgeon
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            target: aarch64-apple-darwin
+            artifact: git-surgeon-darwin-arm64
+            use_cross: false
+          - os: macos-15
+            target: x86_64-apple-darwin
+            artifact: git-surgeon-darwin-amd64
+            use_cross: false
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            artifact: git-surgeon-linux-amd64
+            use_cross: true
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            artifact: git-surgeon-linux-arm64
+            use_cross: true
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install cross
+        if: matrix.use_cross
+        uses: taiki-e/install-action@cross
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Build
+        run: |
+          if [ "${{ matrix.use_cross }}" == "true" ]; then
+            cross build --release --locked --target ${{ matrix.target }}
+          else
+            cargo build --release --locked --target ${{ matrix.target }}
+          fi
+      - name: Package
+        run: |
+          bin="target/${{ matrix.target }}/release/${BIN_NAME}"
+          tar -C "$(dirname "$bin")" -czf ${{ matrix.artifact }}.tar.gz ${BIN_NAME}
+          shasum -a 256 ${{ matrix.artifact }}.tar.gz > ${{ matrix.artifact }}.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.artifact }}.tar.gz
+            ${{ matrix.artifact }}.sha256
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+          generate_release_notes: true
+          files: |
+            *.tar.gz
+            *.sha256
+
+  update-tap:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - uses: actions/checkout@v4
+        with:
+          repository: raine/homebrew-git-surgeon
+          token: ${{ secrets.RELEASE_TOKEN }}
+          path: tap
+      - name: Generate formula and push to tap
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          VERSION="${VERSION#v}"
+          SHA_MAC_ARM=$(awk '{print $1}' git-surgeon-darwin-arm64.sha256)
+          SHA_MAC_INTEL=$(awk '{print $1}' git-surgeon-darwin-amd64.sha256)
+          SHA_LINUX_INTEL=$(awk '{print $1}' git-surgeon-linux-amd64.sha256)
+          SHA_LINUX_ARM=$(awk '{print $1}' git-surgeon-linux-arm64.sha256)
+
+          cat > tap/Formula/git-surgeon.rb << EOF
+          class GitSurgeon < Formula
+            desc "Non-interactive hunk-level git staging for AI agents"
+            homepage "https://github.com/raine/git-surgeon"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/raine/git-surgeon/releases/download/v${VERSION}/git-surgeon-darwin-arm64.tar.gz"
+                sha256 "${SHA_MAC_ARM}"
+              else
+                url "https://github.com/raine/git-surgeon/releases/download/v${VERSION}/git-surgeon-darwin-amd64.tar.gz"
+                sha256 "${SHA_MAC_INTEL}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
+                url "https://github.com/raine/git-surgeon/releases/download/v${VERSION}/git-surgeon-linux-arm64.tar.gz"
+                sha256 "${SHA_LINUX_ARM}"
+              else
+                url "https://github.com/raine/git-surgeon/releases/download/v${VERSION}/git-surgeon-linux-amd64.tar.gz"
+                sha256 "${SHA_LINUX_INTEL}"
+              end
+            end
+
+            def install
+              bin.install "git-surgeon"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("\#{bin}/git-surgeon --version")
+            end
+          end
+          EOF
+          sed -i 's/^          //' tap/Formula/git-surgeon.rb
+
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/git-surgeon.rb
+          git commit -m "git-surgeon ${VERSION}"
+          git pull --rebase
+          git push

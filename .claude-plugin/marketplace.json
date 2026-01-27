@@ -1,0 +1,13 @@
+{
+  "name": "git-surgeon",
+  "owner": {
+    "name": "Raine Virta"
+  },
+  "plugins": [
+    {
+      "name": "git-surgeon",
+      "source": "./",
+      "description": "Surgical, non-interactive git hunk control for AI agents"
+    }
+  ]
+}

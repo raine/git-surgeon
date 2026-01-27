@@ -34,6 +34,12 @@ git-surgeon stage <id1> <id2> ...
 # Stage only part of a hunk by line range
 git-surgeon stage <id> --lines 5-30
 
+# Stage and commit hunks in one step
+git-surgeon commit <id1> <id2> ... -m "message"
+
+# With inline line ranges
+git-surgeon commit <id>:1-11 <id2> -m "message"
+
 # Unstage specific hunks
 git-surgeon unstage <id1> <id2> ...
 git-surgeon unstage <id> --lines 5-30
@@ -57,9 +63,9 @@ git-surgeon undo-file <file1> <file2> ... --from <commit>
 
 1. Run `git-surgeon hunks` to list hunks with their IDs
 2. Use `git-surgeon show <id>` to inspect a hunk (lines are numbered)
-3. Stage desired hunks: `git-surgeon stage <id1> <id2>`
-4. To stage only part of a hunk, use `--lines`: `git-surgeon stage <id> --lines 5-30`
-5. Commit staged changes with `git commit`
+3. Stage and commit in one step: `git-surgeon commit <id1> <id2> -m "message"`
+4. Or stage separately: `git-surgeon stage <id1> <id2>`, then `git commit`
+5. To commit only part of a hunk, use inline ranges: `git-surgeon commit <id>:5-30 -m "message"`
 
 ## Fixing up earlier commits
 

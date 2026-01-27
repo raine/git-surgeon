@@ -172,6 +172,85 @@ pub fn apply_hunks(ids: &[String], mode: ApplyMode, lines: Option<(usize, usize)
     Ok(())
 }
 
+/// Parse an ID that may contain an inline range suffix (e.g. "a1b2c3d:1-11").
+/// Returns (id, optional line range).
+fn parse_id_range(raw: &str) -> Result<(&str, Option<(usize, usize)>)> {
+    if let Some((id, range)) = raw.split_once(':') {
+        let parts: Vec<&str> = range.split('-').collect();
+        if parts.len() != 2 {
+            anyhow::bail!("invalid range in '{}': expected ID:START-END", raw);
+        }
+        let start: usize = parts[0]
+            .parse()
+            .map_err(|_| anyhow::anyhow!("invalid start number in '{}'", raw))?;
+        let end: usize = parts[1]
+            .parse()
+            .map_err(|_| anyhow::anyhow!("invalid end number in '{}'", raw))?;
+        if start == 0 || end == 0 || start > end {
+            anyhow::bail!("range must be 1-based and start <= end in '{}'", raw);
+        }
+        Ok((id, Some((start, end))))
+    } else {
+        Ok((raw, None))
+    }
+}
+
+/// Stage specified hunks and commit them. On commit failure, unstage to restore original state.
+pub fn commit_hunks(ids: &[String], message: &str) -> Result<()> {
+    use std::process::Command;
+
+    // Refuse to proceed if there are already staged changes to avoid committing unrelated work
+    let status = Command::new("git")
+        .args(["diff", "--cached", "--quiet"])
+        .status()
+        .context("failed to check staged changes")?;
+    if !status.success() {
+        anyhow::bail!("index already contains staged changes; commit or unstage them first");
+    }
+
+    let diff_output = crate::diff::run_git_diff(false, None)?;
+    let hunks = crate::diff::parse_diff(&diff_output);
+    let identified = assign_ids(&hunks);
+
+    // Build patch from all requested hunks
+    let mut combined_patch = String::new();
+    for raw_id in ids {
+        let (id, lines) = parse_id_range(raw_id)?;
+        let (_, hunk) = identified
+            .iter()
+            .find(|(hunk_id, _)| hunk_id == id)
+            .ok_or_else(|| anyhow::anyhow!("hunk {} not found (re-run 'hunks')", id))?;
+
+        let patched_hunk = if let Some((start, end)) = lines {
+            slice_hunk(hunk, start, end, false)?
+        } else {
+            (*hunk).clone()
+        };
+        combined_patch.push_str(&build_patch(&patched_hunk));
+        eprintln!("{}", id);
+    }
+
+    // Stage the hunks
+    apply_patch(&combined_patch, &ApplyMode::Stage)?;
+
+    // Commit
+    let output = Command::new("git")
+        .args(["commit", "-m", message])
+        .output()
+        .context("failed to run git commit")?;
+
+    if !output.status.success() {
+        // Unstage to restore original state
+        let _ = apply_patch(&combined_patch, &ApplyMode::Unstage);
+        anyhow::bail!(
+            "git commit failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    Ok(())
+}
+
 pub fn undo_hunks(ids: &[String], commit: &str, lines: Option<(usize, usize)>) -> Result<()> {
     if lines.is_some() && ids.len() != 1 {
         anyhow::bail!("--lines requires exactly one hunk ID");

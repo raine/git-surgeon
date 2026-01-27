@@ -41,6 +41,7 @@ to stage individual hunks instead of entire files.
 - [`hunks`](#hunks) — List hunks in the diff
 - [`show`](#show) — Show full diff for a specific hunk
 - [`stage`](#stage) — Stage hunks by ID
+- [`commit`](#commit) — Stage hunks and commit in one step
 - [`unstage`](#unstage) — Unstage hunks by ID
 - [`discard`](#discard) — Discard working tree changes for hunks
 - [`fixup`](#fixup) — Fold staged changes into an earlier commit
@@ -123,6 +124,21 @@ git-surgeon stage a1b2c3d e4f5678
 
 # Stage only lines 5-30 of a hunk
 git-surgeon stage a1b2c3d --lines 5-30
+```
+
+---
+
+### `commit`
+
+Stages hunks and commits them in a single step. Equivalent to running `stage`
+followed by `git commit`. If the commit fails, the hunks are unstaged to restore
+the original state. Refuses to run if the index already contains staged changes.
+
+```bash
+git-surgeon commit a1b2c3d e4f5678 -m "add pagination"
+
+# With inline line ranges
+git-surgeon commit a1b2c3d:1-11 e4f5678 -m "add pagination"
 ```
 
 ---
@@ -219,15 +235,11 @@ means:
 # 2. Review what changed
 git-surgeon hunks
 
-# 3. Stage only the hunks related to feature A
-git-surgeon stage a1b2c3d e4f5678
+# 3. Stage and commit hunks for feature A in one step
+git-surgeon commit a1b2c3d e4f5678 -m "implement feature A"
 
-# 4. Commit feature A
-git commit -m "implement feature A"
-
-# 5. Stage remaining hunks for feature B
-git-surgeon stage f6g7h8i
-git commit -m "implement feature B"
+# 4. Commit remaining hunks for feature B
+git-surgeon commit f6g7h8i -m "implement feature B"
 ```
 
 ## Example: splitting a hunk across commits

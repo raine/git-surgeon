@@ -229,6 +229,77 @@ git-surgeon stage f6g7h8i
 git commit -m "implement feature B"
 ```
 
+## Example: splitting a hunk across commits
+
+A file has two unrelated changes (pagination + soft-delete filtering) that git
+groups into a single hunk. The agent uses `show` to see line numbers, then
+`--lines` to stage only the pagination part:
+
+```
+❯ Commit the changes separately
+
+⏺ Bash(git diff)
+  ⎿  diff --git i/users.py w/users.py
+     index c3c39df..24929a5 100644
+     --- i/users.py
+     +++ w/users.py
+     @@ -1,13 +1,17 @@
+      import json
+
+     -def list_users(db):
+     +def list_users(db, page=1, per_page=50):
+          """Return all active users."""
+     -    users = db.query("SELECT * FROM users WHERE active = 1")
+     -    return users
+     +    offset = (page - 1) * per_page
+     +    users = db.query("SELECT * FROM users WHERE active = 1 LIMIT ? OFFSET ?", per_page, offset)
+     +    total = db.query("SELECT COUNT(*) FROM users WHERE active = 1")[0]
+     +    return {"users": users, "total": total, "page": page}
+
+      def get_user(db, user_id):
+          """Fetch a single user by ID."""
+     -    user = db.query("SELECT * FROM users WHERE id = ?", user_id)
+     +    user = db.query("SELECT * FROM users WHERE id = ? AND deleted_at IS NULL", user_id)
+     +    if not user:
+     +        return None
+          return user
+
+⏺ There are two logical changes here: pagination for list_users and
+  soft-delete filtering + null handling for get_user. Let me commit them
+  separately using git-surgeon.
+
+⏺ Skill(git-surgeon)
+  ⎿  Successfully loaded skill
+
+⏺ Bash(git-surgeon hunks)
+  ⎿  64ba255 users.py (+8 -4)
+       -def list_users(db):
+       +def list_users(db, page=1, per_page=50):
+       -    users = db.query("SELECT * FROM users WHERE active = 1")
+       ... (+8 more lines)
+
+⏺ Only one hunk. Let me see the full diff with line numbers to split it.
+
+⏺ Bash(git-surgeon show 64ba255)
+  ⎿  @@ -1,13 +1,17 @@
+      1: import json
+      2:
+      3:-def list_users(db):
+      4:+def list_users(db, page=1, per_page=50):
+     ... +15 lines (ctrl+o to expand)
+
+⏺ Bash(git-surgeon stage 64ba255 --lines 1-11)
+  ⎿  64ba255
+
+⏺ Bash(git commit -m "add pagination to list_users")
+  ⎿  [feature-users e81ede5] add pagination to list_users
+      1 file changed, 5 insertions(+), 3 deletions(-)
+
+⏺ Bash(git add users.py && git commit -m "filter soft-deleted users in get_user")
+  ⎿  [feature-users de99d59] filter soft-deleted users in get_user
+      1 file changed, 3 insertions(+), 1 deletion(-)
+```
+
 ## Requirements
 
 - Git 2.0+

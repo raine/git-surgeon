@@ -24,24 +24,30 @@ git-surgeon hunks --file=src/main.rs
 # List hunks from a specific commit
 git-surgeon hunks --commit <HEAD/sha>
 
-# Show full diff for a hunk
+# Show full diff for a hunk (lines are numbered for use with --lines)
 git-surgeon show <id>
 git-surgeon show <id> --commit HEAD
 
 # Stage specific hunks
 git-surgeon stage <id1> <id2> ...
 
+# Stage only part of a hunk by line range
+git-surgeon stage <id> --lines 5-30
+
 # Unstage specific hunks
 git-surgeon unstage <id1> <id2> ...
+git-surgeon unstage <id> --lines 5-30
 
 # Discard working tree changes for specific hunks
 git-surgeon discard <id1> <id2> ...
+git-surgeon discard <id> --lines 5-30
 
 # Fixup an earlier commit with currently staged changes
 git-surgeon fixup <commit>
 
 # Undo specific hunks from a commit (reverse-apply to working tree)
 git-surgeon undo <id1> <id2> ... --from <commit>
+git-surgeon undo <id> --from <commit> --lines 2-10
 
 # Undo all changes to specific files from a commit
 git-surgeon undo-file <file1> <file2> ... --from <commit>
@@ -50,9 +56,10 @@ git-surgeon undo-file <file1> <file2> ... --from <commit>
 ## Typical workflow
 
 1. Run `git-surgeon hunks` to list hunks with their IDs
-2. Use `git-surgeon show <id>` to inspect a hunk if needed
+2. Use `git-surgeon show <id>` to inspect a hunk (lines are numbered)
 3. Stage desired hunks: `git-surgeon stage <id1> <id2>`
-4. Commit staged changes with `git commit`
+4. To stage only part of a hunk, use `--lines`: `git-surgeon stage <id> --lines 5-30`
+5. Commit staged changes with `git commit`
 
 ## Fixing up earlier commits
 

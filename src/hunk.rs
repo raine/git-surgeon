@@ -104,8 +104,9 @@ pub fn show_hunk(id: &str, commit: Option<&str>) -> Result<()> {
     };
 
     println!("{}", hunk.header);
-    for line in &hunk.lines {
-        println!("{}", line);
+    let width = hunk.lines.len().to_string().len();
+    for (i, line) in hunk.lines.iter().enumerate() {
+        println!("{:>w$}:{}", i + 1, line, w = width);
     }
     Ok(())
 }
@@ -140,7 +141,11 @@ pub enum ApplyMode {
     Discard,
 }
 
-pub fn apply_hunks(ids: &[String], mode: ApplyMode) -> Result<()> {
+pub fn apply_hunks(ids: &[String], mode: ApplyMode, lines: Option<(usize, usize)>) -> Result<()> {
+    if lines.is_some() && ids.len() != 1 {
+        anyhow::bail!("--lines requires exactly one hunk ID");
+    }
+
     let staged = matches!(mode, ApplyMode::Unstage);
     let diff_output = crate::diff::run_git_diff(staged, None)?;
     let hunks = crate::diff::parse_diff(&diff_output);
@@ -153,7 +158,13 @@ pub fn apply_hunks(ids: &[String], mode: ApplyMode) -> Result<()> {
             .find(|(hunk_id, _)| hunk_id == id)
             .ok_or_else(|| anyhow::anyhow!("hunk {} not found (re-run 'hunks')", id))?;
 
-        combined_patch.push_str(&build_patch(hunk));
+        let reverse = matches!(mode, ApplyMode::Unstage | ApplyMode::Discard);
+        let patched_hunk = if let Some((start, end)) = lines {
+            slice_hunk(hunk, start, end, reverse)?
+        } else {
+            (*hunk).clone()
+        };
+        combined_patch.push_str(&build_patch(&patched_hunk));
         eprintln!("{}", id);
     }
 
@@ -161,7 +172,11 @@ pub fn apply_hunks(ids: &[String], mode: ApplyMode) -> Result<()> {
     Ok(())
 }
 
-pub fn undo_hunks(ids: &[String], commit: &str) -> Result<()> {
+pub fn undo_hunks(ids: &[String], commit: &str, lines: Option<(usize, usize)>) -> Result<()> {
+    if lines.is_some() && ids.len() != 1 {
+        anyhow::bail!("--lines requires exactly one hunk ID");
+    }
+
     let diff_output = crate::diff::run_git_diff_commit(commit, None)?;
     let hunks = crate::diff::parse_diff(&diff_output);
     let identified = assign_ids(&hunks);
@@ -173,7 +188,12 @@ pub fn undo_hunks(ids: &[String], commit: &str) -> Result<()> {
             .find(|(hunk_id, _)| hunk_id == id)
             .ok_or_else(|| anyhow::anyhow!("hunk {} not found in commit {}", id, commit))?;
 
-        combined_patch.push_str(&build_patch(hunk));
+        let patched_hunk = if let Some((start, end)) = lines {
+            slice_hunk(hunk, start, end, true)?
+        } else {
+            (*hunk).clone()
+        };
+        combined_patch.push_str(&build_patch(&patched_hunk));
         eprintln!("{}", id);
     }
 
@@ -203,6 +223,97 @@ pub fn undo_files(files: &[String], commit: &str) -> Result<()> {
 
     apply_patch(&combined_patch, &ApplyMode::Discard)?;
     Ok(())
+}
+
+/// Slice a hunk to only include changes within the given 1-based line range.
+/// Lines outside the range have their changes neutralized:
+/// - excluded '+' lines are dropped
+/// - excluded '-' lines become context (the deletion is kept)
+/// Context lines are always preserved for patch validity.
+fn slice_hunk(hunk: &DiffHunk, start: usize, end: usize, reverse: bool) -> Result<DiffHunk> {
+    let mut new_lines = Vec::new();
+    for (i, line) in hunk.lines.iter().enumerate() {
+        let idx = i + 1; // 1-based
+        let in_range = idx >= start && idx <= end;
+
+        if line.starts_with('+') {
+            if in_range {
+                new_lines.push(line.clone());
+            } else if reverse {
+                // For reverse apply: excluded '+' lines exist in the file,
+                // so they must become context for the patch to match.
+                new_lines.push(format!(" {}", &line[1..]));
+            }
+            // For forward apply: excluded '+' lines are simply dropped
+        } else if line.starts_with('-') {
+            if in_range {
+                new_lines.push(line.clone());
+            } else if !reverse {
+                // For forward apply: excluded '-' lines become context
+                new_lines.push(format!(" {}", &line[1..]));
+            }
+            // For reverse apply: excluded '-' lines don't exist in the file, drop them
+        } else {
+            // context lines: always keep
+            new_lines.push(line.clone());
+        }
+    }
+
+    // Recompute @@ header
+    let old_count = new_lines
+        .iter()
+        .filter(|l| l.starts_with('-') || l.starts_with(' '))
+        .count();
+    let new_count = new_lines
+        .iter()
+        .filter(|l| l.starts_with('+') || l.starts_with(' '))
+        .count();
+
+    // Parse original start lines from header
+    let (old_start, new_start) = parse_hunk_starts(&hunk.header)?;
+
+    let func_ctx = hunk
+        .header
+        .find("@@ ")
+        .and_then(|s| {
+            let rest = &hunk.header[s + 3..];
+            rest.find("@@").map(|e| &rest[e + 2..])
+        })
+        .unwrap_or("");
+
+    let new_header = format!(
+        "@@ -{},{} +{},{} @@{}",
+        old_start, old_count, new_start, new_count, func_ctx
+    );
+
+    Ok(DiffHunk {
+        file: hunk.file.clone(),
+        file_header: hunk.file_header.clone(),
+        header: new_header,
+        lines: new_lines,
+    })
+}
+
+fn parse_hunk_starts(header: &str) -> Result<(usize, usize)> {
+    let content = header
+        .trim_start_matches("@@ ")
+        .split(" @@")
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("invalid hunk header"))?;
+    let mut parts = content.split_whitespace();
+    let old_start: usize = parts
+        .next()
+        .and_then(|s| s.strip_prefix('-'))
+        .and_then(|s| s.split(',').next())
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| anyhow::anyhow!("cannot parse old start from header"))?;
+    let new_start: usize = parts
+        .next()
+        .and_then(|s| s.strip_prefix('+'))
+        .and_then(|s| s.split(',').next())
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| anyhow::anyhow!("cannot parse new start from header"))?;
+    Ok((old_start, new_start))
 }
 
 /// Reconstruct a minimal unified diff patch for a single hunk.

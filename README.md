@@ -87,13 +87,24 @@ Each line shows: `<hunk-id> <file> [function context] (+additions -deletions)`
 
 ### `show`
 
-Shows the full diff (header + all lines) for a single hunk.
+Shows the full diff (header + all lines) for a single hunk. Each line is
+prefixed with a 1-based line number for use with `--lines`.
 
 ```bash
 git-surgeon show a1b2c3d
 
 # Show a hunk from a specific commit
 git-surgeon show a1b2c3d --commit HEAD
+```
+
+#### Example output
+
+```
+@@ -1,4 +1,6 @@ fn main
+1: context
+2:-deleted line
+3:+added line
+4: context
 ```
 
 Searches both unstaged and staged diffs when no `--commit` is specified.
@@ -108,6 +119,9 @@ Stages one or more hunks by ID. Equivalent to selectively answering "y" in
 ```bash
 git-surgeon stage a1b2c3d
 git-surgeon stage a1b2c3d e4f5678
+
+# Stage only lines 5-30 of a hunk
+git-surgeon stage a1b2c3d --lines 5-30
 ```
 
 ---
@@ -120,6 +134,9 @@ tree.
 ```bash
 git-surgeon unstage a1b2c3d
 git-surgeon unstage a1b2c3d e4f5678
+
+# Unstage only lines 5-30 of a hunk
+git-surgeon unstage a1b2c3d --lines 5-30
 ```
 
 ---
@@ -131,6 +148,9 @@ hunks, effectively running `git checkout -p` non-interactively.
 
 ```bash
 git-surgeon discard a1b2c3d
+
+# Discard only lines 5-30 of a hunk
+git-surgeon discard a1b2c3d --lines 5-30
 ```
 
 **Warning:** This permanently removes uncommitted changes for the specified
@@ -171,6 +191,9 @@ git-surgeon hunks --commit HEAD
 # Undo specific hunks
 git-surgeon undo a1b2c3d --from HEAD
 git-surgeon undo a1b2c3d e4f5678 --from HEAD~3
+
+# Undo only lines 2-10 of a hunk
+git-surgeon undo a1b2c3d --from HEAD --lines 2-10
 ```
 
 The changes appear as unstaged modifications in the working tree. Fails

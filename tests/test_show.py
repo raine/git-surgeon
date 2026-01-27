@@ -20,8 +20,19 @@ def test_show_hunk_content(git_agent_exe, repo):
     result = run_git_agent(git_agent_exe, repo, "show", ids[0])
     assert result.returncode == 0
     assert "@@" in result.stdout
-    assert "-before" in result.stdout
-    assert "+after" in result.stdout
+    assert "1:-before" in result.stdout
+    assert "2:+after" in result.stdout
+
+
+def test_show_line_numbers_sequential(git_agent_exe, repo):
+    create_file(repo, "nums.txt", "a\nb\nc\n")
+    modify_file(repo, "nums.txt", "a\nB\nc\n")
+
+    ids = _get_hunk_ids(git_agent_exe, repo)
+    result = run_git_agent(git_agent_exe, repo, "show", ids[0])
+    lines = [l for l in result.stdout.strip().split("\n") if not l.startswith("@@")]
+    for i, line in enumerate(lines):
+        assert line.startswith(f"{i + 1}:"), f"line {i} missing number prefix: {line}"
 
 
 def test_show_invalid_id(git_agent_exe, repo):

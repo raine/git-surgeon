@@ -198,10 +198,10 @@ IDs are 7-character hex strings derived from SHA-1 of the file path and hunk
 content (the actual `+`/`-`/context lines, excluding the `@@` header). This
 means:
 
-- IDs are **stable across line shifts** — adding lines above a hunk doesn't
-  change its ID
-- IDs are **deterministic** — the same content always produces the same ID
-- **Collisions** get a `-2`, `-3` suffix (e.g., `a1b2c3d-2`)
+- IDs are stable across line shifts — adding lines above a hunk doesn't change
+  its ID
+- IDs are deterministic — the same content always produces the same ID
+- Collisions get a `-2`, `-3` suffix (e.g., `a1b2c3d-2`)
 
 ## Typical AI agent workflow
 

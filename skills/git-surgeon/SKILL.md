@@ -1,6 +1,6 @@
 ---
 name: git-surgeon
-description: Non-interactive hunk-level git staging, unstaging, discarding, and undoing. Use when selectively staging, unstaging, discarding, or reverting individual diff hunks by ID instead of interactively.
+description: Non-interactive hunk-level git staging, unstaging, discarding, undoing, and fixup. Use when selectively staging, unstaging, discarding, or reverting individual diff hunks by ID instead of interactively.
 ---
 
 # git-surgeon
@@ -22,8 +22,7 @@ git-surgeon hunks --staged
 git-surgeon hunks --file=src/main.rs
 
 # List hunks from a specific commit
-git-surgeon hunks --commit HEAD
-git-surgeon hunks --commit <sha>
+git-surgeon hunks --commit <HEAD/sha>
 
 # Show full diff for a hunk
 git-surgeon show <id>

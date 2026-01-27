@@ -17,6 +17,12 @@ stage exactly what they want in a single command.
 **Precise partial commits.** Stage specific hunks across multiple files, leave
 the rest as unstaged changes. No temporary files, no patch editing.
 
+**No more edit-commit-restore loops.** Without hunk-level staging, an AI agent
+that needs to commit two independent changes in the same file has to manually
+edit one change out, commit, then restore the edit and commit again. git-surgeon
+lets the agent stage each hunk separately and commit them in sequence - no file
+editing gymnastics required.
+
 **Stable IDs.** Hunk IDs are derived from content (SHA-1 of file path + hunk
 lines), not line numbers. They survive rebases and line shifts as long as the
 hunk content doesn't change.
@@ -58,8 +64,8 @@ git commit -m "partial changes"
 
 ### `hunks`
 
-Lists all hunks with their IDs, file paths, function context, change counts,
-and a preview of changed lines.
+Lists all hunks with their IDs, file paths, function context, change counts, and
+a preview of changed lines.
 
 ```bash
 # List unstaged hunks

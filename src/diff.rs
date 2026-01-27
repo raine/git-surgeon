@@ -39,7 +39,7 @@ pub fn run_git_diff_commit(commit: &str, file: Option<&str>) -> Result<String> {
     run_git_cmd(&mut cmd)
 }
 
-fn run_git_cmd(cmd: &mut Command) -> Result<String> {
+pub fn run_git_cmd(cmd: &mut Command) -> Result<String> {
     let output = cmd.output().context("failed to run git command")?;
     if !output.status.success() {
         anyhow::bail!(

@@ -219,6 +219,115 @@ fn build_patch(hunk: &DiffHunk) -> String {
     patch
 }
 
+/// Fold currently staged changes into an earlier commit via autosquash rebase.
+/// If the target is HEAD, uses simple --amend instead.
+pub fn fixup(commit: &str) -> Result<()> {
+    use std::process::Command;
+
+    // Verify there are staged changes
+    let status = Command::new("git")
+        .args(["diff", "--cached", "--quiet"])
+        .status()
+        .context("failed to run git diff")?;
+    if status.success() {
+        anyhow::bail!("no staged changes to fixup");
+    }
+
+    // Check no rebase/cherry-pick in progress
+    for dir_name in ["rebase-merge", "rebase-apply"] {
+        let check = Command::new("git")
+            .args(["rev-parse", "--git-path", dir_name])
+            .output()
+            .context("failed to check rebase state")?;
+        let dir = String::from_utf8_lossy(&check.stdout).trim().to_string();
+        if std::path::Path::new(&dir).exists() {
+            anyhow::bail!("rebase already in progress");
+        }
+    }
+
+    // Resolve the target commit SHA
+    let target_sha = crate::diff::run_git_cmd(
+        Command::new("git").args(["rev-parse", commit]),
+    )?;
+    let target_sha = target_sha.trim();
+
+    let head_sha = crate::diff::run_git_cmd(
+        Command::new("git").args(["rev-parse", "HEAD"]),
+    )?;
+    let head_sha = head_sha.trim();
+
+    if target_sha == head_sha {
+        // Simple case: amend HEAD
+        let output = Command::new("git")
+            .args(["commit", "--amend", "--no-edit"])
+            .output()
+            .context("failed to amend HEAD")?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "git commit --amend failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    } else {
+        // Get target commit subject for fixup message
+        let subject = crate::diff::run_git_cmd(
+            Command::new("git").args(["log", "-1", "--format=%s", target_sha]),
+        )?;
+        let subject = subject.trim();
+
+        // Create fixup commit
+        let output = Command::new("git")
+            .args(["commit", "-m", &format!("fixup! {}", subject)])
+            .output()
+            .context("failed to create fixup commit")?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "git commit failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        // Check if target is root commit (has no parent)
+        let is_root = Command::new("git")
+            .args(["rev-parse", "--verify", &format!("{}^", target_sha)])
+            .output()
+            .map(|o| !o.status.success())
+            .unwrap_or(false);
+
+        // Non-interactive autosquash rebase
+        let mut rebase_cmd = Command::new("git");
+        rebase_cmd.args(["rebase", "-i", "--autosquash", "--autostash"]);
+        if is_root {
+            rebase_cmd.arg("--root");
+        } else {
+            rebase_cmd.arg(&format!("{}~1", target_sha));
+        }
+        rebase_cmd.env("GIT_SEQUENCE_EDITOR", "true");
+
+        let output = rebase_cmd.output().context("failed to run rebase")?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!(
+                "error: rebase conflict while fixing up {}",
+                &target_sha[..7.min(target_sha.len())]
+            );
+            eprintln!("resolve conflicts and run: git rebase --continue");
+            eprintln!("or abort with: git rebase --abort");
+            anyhow::bail!("rebase failed: {}", stderr);
+        }
+    }
+
+    // Print short sha + subject of the fixed-up commit
+    let info = crate::diff::run_git_cmd(
+        Command::new("git").args(["log", "-1", "--format=%h %s", target_sha]),
+    );
+    if let Ok(info) = info {
+        eprintln!("fixed up {}", info.trim());
+    }
+
+    Ok(())
+}
+
 /// Apply a patch using git apply.
 fn apply_patch(patch: &str, mode: &ApplyMode) -> Result<()> {
     use std::io::Write;

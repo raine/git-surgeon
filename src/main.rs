@@ -57,6 +57,11 @@ enum Commands {
         #[arg(long)]
         from: String,
     },
+    /// Fixup an earlier commit with currently staged changes
+    Fixup {
+        /// Target commit to fold staged changes into
+        commit: String,
+    },
     /// Undo all changes to specific files from a commit
     UndoFile {
         /// File paths to undo
@@ -76,6 +81,7 @@ fn main() -> Result<()> {
         Commands::Stage { ids } => hunk::apply_hunks(&ids, hunk::ApplyMode::Stage)?,
         Commands::Unstage { ids } => hunk::apply_hunks(&ids, hunk::ApplyMode::Unstage)?,
         Commands::Discard { ids } => hunk::apply_hunks(&ids, hunk::ApplyMode::Discard)?,
+        Commands::Fixup { commit } => hunk::fixup(&commit)?,
         Commands::Undo { ids, from } => hunk::undo_hunks(&ids, &from)?,
         Commands::UndoFile { files, from } => hunk::undo_files(&files, &from)?,
     }

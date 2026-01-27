@@ -38,6 +38,9 @@ git-surgeon unstage <id1> <id2> ...
 # Discard working tree changes for specific hunks
 git-surgeon discard <id1> <id2> ...
 
+# Fixup an earlier commit with currently staged changes
+git-surgeon fixup <commit>
+
 # Undo specific hunks from a commit (reverse-apply to working tree)
 git-surgeon undo <id1> <id2> ... --from <commit>
 
@@ -51,6 +54,13 @@ git-surgeon undo-file <file1> <file2> ... --from <commit>
 2. Use `git-surgeon show <id>` to inspect a hunk if needed
 3. Stage desired hunks: `git-surgeon stage <id1> <id2>`
 4. Commit staged changes with `git commit`
+
+## Fixing up earlier commits
+
+1. Stage desired hunks: `git-surgeon stage <id1> <id2>`
+2. Fixup the target commit: `git-surgeon fixup <commit-sha>`
+3. For HEAD, this amends directly; for older commits, it uses autosquash rebase
+4. Unstaged changes are preserved automatically
 
 ## Undoing changes from commits
 

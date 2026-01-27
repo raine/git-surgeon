@@ -51,6 +51,7 @@ git commit -m "partial changes"
 - [`stage`](#stage) — Stage hunks by ID
 - [`unstage`](#unstage) — Unstage hunks by ID
 - [`discard`](#discard) — Discard working tree changes for hunks
+- [`fixup`](#fixup) — Fold staged changes into an earlier commit
 - [`undo`](#undo) — Reverse-apply hunks from a commit
 
 ---
@@ -143,6 +144,26 @@ git-surgeon discard a1b2c3d
 
 **Warning:** This permanently removes uncommitted changes for the specified
 hunks.
+
+---
+
+### `fixup`
+
+Folds currently staged changes into an earlier commit. Uses `git commit --amend`
+for HEAD, or an autosquash rebase for older commits. Unstaged changes are
+preserved via `--autostash`.
+
+```bash
+# Stage some hunks, then fixup an earlier commit
+git-surgeon stage a1b2c3d
+git-surgeon fixup abc1234
+
+# Fixup HEAD (equivalent to git commit --amend --no-edit)
+git-surgeon fixup HEAD
+```
+
+If the rebase hits a conflict, the repo is left in the conflict state for manual
+resolution (`git rebase --continue` or `git rebase --abort`).
 
 ---
 

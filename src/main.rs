@@ -3,6 +3,8 @@ use clap::Parser;
 
 mod diff;
 mod hunk;
+mod hunk_id;
+mod patch;
 
 #[derive(Parser)]
 #[command(name = "git-surgeon")]
@@ -202,12 +204,12 @@ fn main() -> Result<()> {
             commit,
         } => hunk::list_hunks(staged, file.as_deref(), commit.as_deref())?,
         Commands::Show { id, commit } => hunk::show_hunk(&id, commit.as_deref())?,
-        Commands::Stage { ids, lines } => hunk::apply_hunks(&ids, hunk::ApplyMode::Stage, lines)?,
+        Commands::Stage { ids, lines } => hunk::apply_hunks(&ids, patch::ApplyMode::Stage, lines)?,
         Commands::Unstage { ids, lines } => {
-            hunk::apply_hunks(&ids, hunk::ApplyMode::Unstage, lines)?
+            hunk::apply_hunks(&ids, patch::ApplyMode::Unstage, lines)?
         }
         Commands::Discard { ids, lines } => {
-            hunk::apply_hunks(&ids, hunk::ApplyMode::Discard, lines)?
+            hunk::apply_hunks(&ids, patch::ApplyMode::Discard, lines)?
         }
         Commands::Commit { ids, message } => hunk::commit_hunks(&ids, &message.join("\n\n"))?,
         Commands::Fixup { commit } => hunk::fixup(&commit)?,

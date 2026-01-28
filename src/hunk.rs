@@ -302,9 +302,16 @@ pub fn undo_files(files: &[String], commit: &str) -> Result<()> {
     let mut combined_patch = String::new();
     let mut matched_files = std::collections::HashSet::new();
     for hunk in &hunks {
-        if files.iter().any(|f| f == &hunk.file) {
+        if files
+            .iter()
+            .any(|f| f == &hunk.file || f == &hunk.old_file || f == &hunk.new_file)
+        {
             combined_patch.push_str(&build_patch(hunk));
-            matched_files.insert(&hunk.file);
+            matched_files.extend(
+                files
+                    .iter()
+                    .filter(|f| *f == &hunk.file || *f == &hunk.old_file || *f == &hunk.new_file),
+            );
         }
     }
 
@@ -382,6 +389,8 @@ fn slice_hunk_multi(hunk: &DiffHunk, ranges: &[(usize, usize)], reverse: bool) -
 
     Ok(DiffHunk {
         file: hunk.file.clone(),
+        old_file: hunk.old_file.clone(),
+        new_file: hunk.new_file.clone(),
         file_header: hunk.file_header.clone(),
         header: new_header,
         lines: new_lines,

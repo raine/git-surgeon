@@ -5,6 +5,7 @@ mod diff;
 mod hunk;
 mod hunk_id;
 mod patch;
+mod skill;
 
 #[derive(Parser)]
 #[command(name = "git-surgeon")]
@@ -100,6 +101,18 @@ enum Commands {
         /// Remaining args: --pick <ids...> -m <msg> [-m <body>...] [--rest-message <msg>...]
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
+    },
+    /// Install the git-surgeon skill for AI coding assistants
+    InstallSkill {
+        /// Install for Claude Code (~/.claude/skills/)
+        #[arg(long)]
+        claude: bool,
+        /// Install for OpenCode (~/.config/opencode/skills/)
+        #[arg(long)]
+        opencode: bool,
+        /// Install for Codex (~/.codex/skills/)
+        #[arg(long)]
+        codex: bool,
     },
 }
 
@@ -256,6 +269,23 @@ fn main() -> Result<()> {
         Commands::Split { commit, args } => {
             let (pick_groups, rest_message) = parse_split_args(&args)?;
             hunk::split(&commit, &pick_groups, rest_message.as_deref())?;
+        }
+        Commands::InstallSkill {
+            claude,
+            opencode,
+            codex,
+        } => {
+            let mut platforms = Vec::new();
+            if claude {
+                platforms.push(skill::Platform::Claude);
+            }
+            if opencode {
+                platforms.push(skill::Platform::OpenCode);
+            }
+            if codex {
+                platforms.push(skill::Platform::Codex);
+            }
+            skill::install_skill(&platforms)?;
         }
     }
 

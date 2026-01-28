@@ -20,12 +20,23 @@ cargo install git-surgeon
 brew install raine/git-surgeon/git-surgeon
 ```
 
-### 2. Install the Claude Code Skill
+### 2. Install the AI assistant skill
 
 ```bash
-# Register the plugin source
+# Claude Code
+git-surgeon install-skill --claude
+
+# OpenCode
+git-surgeon install-skill --opencode
+
+# Codex
+git-surgeon install-skill --codex
+```
+
+Alternatively, for Claude Code via the plugin marketplace:
+
+```bash
 claude plugin marketplace add raine/git-surgeon
-# Install the skill that teaches Claude Code to use git-surgeon
 claude plugin install git-surgeon@git-surgeon
 ```
 

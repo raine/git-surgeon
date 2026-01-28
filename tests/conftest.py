@@ -13,9 +13,7 @@ class CommandResult:
 
 @pytest.fixture(scope="session")
 def git_agent_exe():
-    root = Path(__file__).parent.parent
-    subprocess.run(["cargo", "build"], cwd=root, check=True)
-    return root / "target" / "debug" / "git-surgeon"
+    return Path(__file__).parent.parent / "target" / "debug" / "git-surgeon"
 
 
 @pytest.fixture

@@ -436,14 +436,10 @@ pub fn fixup(commit: &str) -> Result<()> {
     }
 
     // Resolve the target commit SHA
-    let target_sha = crate::diff::run_git_cmd(
-        Command::new("git").args(["rev-parse", commit]),
-    )?;
+    let target_sha = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", commit]))?;
     let target_sha = target_sha.trim();
 
-    let head_sha = crate::diff::run_git_cmd(
-        Command::new("git").args(["rev-parse", "HEAD"]),
-    )?;
+    let head_sha = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", "HEAD"]))?;
     let head_sha = head_sha.trim();
 
     if target_sha == head_sha {
@@ -460,9 +456,12 @@ pub fn fixup(commit: &str) -> Result<()> {
         }
     } else {
         // Get target commit subject for fixup message
-        let subject = crate::diff::run_git_cmd(
-            Command::new("git").args(["log", "-1", "--format=%s", target_sha]),
-        )?;
+        let subject = crate::diff::run_git_cmd(Command::new("git").args([
+            "log",
+            "-1",
+            "--format=%s",
+            target_sha,
+        ]))?;
         let subject = subject.trim();
 
         // Create fixup commit
@@ -490,7 +489,7 @@ pub fn fixup(commit: &str) -> Result<()> {
         if is_root {
             rebase_cmd.arg("--root");
         } else {
-            rebase_cmd.arg(&format!("{}~1", target_sha));
+            rebase_cmd.arg(format!("{}~1", target_sha));
         }
         rebase_cmd.env("GIT_SEQUENCE_EDITOR", "true");
 
@@ -508,9 +507,12 @@ pub fn fixup(commit: &str) -> Result<()> {
     }
 
     // Print short sha + subject of the fixed-up commit
-    let info = crate::diff::run_git_cmd(
-        Command::new("git").args(["log", "-1", "--format=%h %s", target_sha]),
-    );
+    let info = crate::diff::run_git_cmd(Command::new("git").args([
+        "log",
+        "-1",
+        "--format=%h %s",
+        target_sha,
+    ]));
     if let Ok(info) = info {
         eprintln!("fixed up {}", info.trim());
     }
@@ -549,14 +551,10 @@ pub fn split(
     }
 
     // Resolve target commit
-    let target_sha = crate::diff::run_git_cmd(
-        Command::new("git").args(["rev-parse", commit]),
-    )?;
+    let target_sha = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", commit]))?;
     let target_sha = target_sha.trim().to_string();
 
-    let head_sha = crate::diff::run_git_cmd(
-        Command::new("git").args(["rev-parse", "HEAD"]),
-    )?;
+    let head_sha = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", "HEAD"]))?;
     let head_sha = head_sha.trim().to_string();
 
     let is_head = target_sha == head_sha;
@@ -570,15 +568,22 @@ pub fn split(
     for group in pick_groups {
         for (id, _) in &group.ids {
             if !identified.iter().any(|(hid, _)| hid == id) {
-                anyhow::bail!("hunk {} not found in commit {}", id, &target_sha[..7.min(target_sha.len())]);
+                anyhow::bail!(
+                    "hunk {} not found in commit {}",
+                    id,
+                    &target_sha[..7.min(target_sha.len())]
+                );
             }
         }
     }
 
     // Get original commit message for rest-message default
-    let original_message = crate::diff::run_git_cmd(
-        Command::new("git").args(["log", "-1", "--format=%B", &target_sha]),
-    )?;
+    let original_message = crate::diff::run_git_cmd(Command::new("git").args([
+        "log",
+        "-1",
+        "--format=%B",
+        &target_sha,
+    ]))?;
     let original_message = original_message.trim();
     let rest_msg = rest_message.unwrap_or(original_message);
 
@@ -608,9 +613,12 @@ pub fn split(
         if is_root {
             rebase_cmd.arg("--root");
         } else {
-            rebase_cmd.arg(&format!("{}~1", target_sha));
+            rebase_cmd.arg(format!("{}~1", target_sha));
         }
-        rebase_cmd.env("GIT_SEQUENCE_EDITOR", format!("sed -i.bak '{}'", sed_script));
+        rebase_cmd.env(
+            "GIT_SEQUENCE_EDITOR",
+            format!("sed -i.bak '{}'", sed_script),
+        );
 
         let output = rebase_cmd.output().context("failed to start rebase")?;
         if !output.status.success() {
@@ -624,7 +632,10 @@ pub fn split(
             .output()
             .context("failed to reset commit")?;
         if !output.status.success() {
-            anyhow::bail!("git reset failed: {}", String::from_utf8_lossy(&output.stderr));
+            anyhow::bail!(
+                "git reset failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
     } else {
         // HEAD: just reset
@@ -633,7 +644,10 @@ pub fn split(
             .output()
             .context("failed to reset HEAD")?;
         if !output.status.success() {
-            anyhow::bail!("git reset failed: {}", String::from_utf8_lossy(&output.stderr));
+            anyhow::bail!(
+                "git reset failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
     }
 
@@ -668,7 +682,10 @@ pub fn split(
             .output()
             .context("failed to commit")?;
         if !output.status.success() {
-            anyhow::bail!("git commit failed: {}", String::from_utf8_lossy(&output.stderr));
+            anyhow::bail!(
+                "git commit failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
         eprintln!("committed: {}", group.message);
     }
@@ -688,7 +705,10 @@ pub fn split(
             .output()
             .context("failed to commit remaining")?;
         if !output.status.success() {
-            anyhow::bail!("git commit failed: {}", String::from_utf8_lossy(&output.stderr));
+            anyhow::bail!(
+                "git commit failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
         eprintln!("committed: {}", rest_msg);
     }
@@ -733,11 +753,7 @@ fn apply_patch(patch: &str, mode: &ApplyMode) -> Result<()> {
 
     cmd.stdin(Stdio::piped());
     let mut child = cmd.spawn().context("failed to run git apply")?;
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(patch.as_bytes())?;
+    child.stdin.as_mut().unwrap().write_all(patch.as_bytes())?;
     let output = child.wait_with_output()?;
 
     if !output.status.success() {

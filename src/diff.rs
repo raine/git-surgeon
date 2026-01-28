@@ -13,7 +13,12 @@ pub struct DiffHunk {
     pub lines: Vec<String>,
 }
 
-const DIFF_FORMAT_ARGS: &[&str] = &["--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/"];
+const DIFF_FORMAT_ARGS: &[&str] = &[
+    "--no-color",
+    "--no-ext-diff",
+    "--src-prefix=a/",
+    "--dst-prefix=b/",
+];
 
 pub fn run_git_diff(staged: bool, file: Option<&str>) -> Result<String> {
     let mut cmd = Command::new("git");

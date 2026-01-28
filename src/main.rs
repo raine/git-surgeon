@@ -196,11 +196,19 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Hunks { staged, file, commit } => hunk::list_hunks(staged, file.as_deref(), commit.as_deref())?,
+        Commands::Hunks {
+            staged,
+            file,
+            commit,
+        } => hunk::list_hunks(staged, file.as_deref(), commit.as_deref())?,
         Commands::Show { id, commit } => hunk::show_hunk(&id, commit.as_deref())?,
         Commands::Stage { ids, lines } => hunk::apply_hunks(&ids, hunk::ApplyMode::Stage, lines)?,
-        Commands::Unstage { ids, lines } => hunk::apply_hunks(&ids, hunk::ApplyMode::Unstage, lines)?,
-        Commands::Discard { ids, lines } => hunk::apply_hunks(&ids, hunk::ApplyMode::Discard, lines)?,
+        Commands::Unstage { ids, lines } => {
+            hunk::apply_hunks(&ids, hunk::ApplyMode::Unstage, lines)?
+        }
+        Commands::Discard { ids, lines } => {
+            hunk::apply_hunks(&ids, hunk::ApplyMode::Discard, lines)?
+        }
         Commands::Commit { ids, message } => hunk::commit_hunks(&ids, &message.join("\n\n"))?,
         Commands::Fixup { commit } => hunk::fixup(&commit)?,
         Commands::Undo { ids, from, lines } => hunk::undo_hunks(&ids, &from, lines)?,

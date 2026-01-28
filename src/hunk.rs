@@ -174,20 +174,24 @@ pub fn apply_hunks(ids: &[String], mode: ApplyMode, lines: Option<(usize, usize)
     Ok(())
 }
 
-/// Parse an ID that may contain an inline range suffix (e.g. "a1b2c3d:1-11").
+/// Parse an ID that may contain an inline range suffix (e.g. "a1b2c3d:1-11" or "a1b2c3d:5").
 /// Returns (id, optional line range).
 fn parse_id_range(raw: &str) -> Result<(&str, Option<(usize, usize)>)> {
     if let Some((id, range)) = raw.split_once(':') {
-        let parts: Vec<&str> = range.split('-').collect();
-        if parts.len() != 2 {
-            anyhow::bail!("invalid range in '{}': expected ID:START-END", raw);
-        }
-        let start: usize = parts[0]
-            .parse()
-            .map_err(|_| anyhow::anyhow!("invalid start number in '{}'", raw))?;
-        let end: usize = parts[1]
-            .parse()
-            .map_err(|_| anyhow::anyhow!("invalid end number in '{}'", raw))?;
+        let (start, end) = if let Some((a, b)) = range.split_once('-') {
+            let start: usize = a
+                .parse()
+                .map_err(|_| anyhow::anyhow!("invalid start number in '{}'", raw))?;
+            let end: usize = b
+                .parse()
+                .map_err(|_| anyhow::anyhow!("invalid end number in '{}'", raw))?;
+            (start, end)
+        } else {
+            let n: usize = range
+                .parse()
+                .map_err(|_| anyhow::anyhow!("invalid line number in '{}'", raw))?;
+            (n, n)
+        };
         if start == 0 || end == 0 || start > end {
             anyhow::bail!("range must be 1-based and start <= end in '{}'", raw);
         }

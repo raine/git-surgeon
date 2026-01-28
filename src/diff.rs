@@ -16,6 +16,8 @@ pub struct DiffHunk {
     pub header: String,
     /// All lines in the hunk (context, +, -)
     pub lines: Vec<String>,
+    /// Unsupported preamble metadata (rename, mode change, etc.) if present
+    pub unsupported_metadata: Option<String>,
 }
 
 const DIFF_FORMAT_ARGS: &[&str] = &[
@@ -72,6 +74,20 @@ fn strip_diff_prefix(line: &str) -> &str {
         .unwrap_or(line)
 }
 
+/// Preamble lines that indicate unsupported metadata operations.
+/// Note: "new file mode" and "deleted file mode" are supported (they work fine
+/// with the --- /dev/null or +++ /dev/null headers we already capture).
+const UNSUPPORTED_PREAMBLE_PREFIXES: &[&str] = &[
+    "rename from ",
+    "rename to ",
+    "copy from ",
+    "copy to ",
+    "old mode ",
+    "new mode ",
+    "similarity index ",
+    "dissimilarity index ",
+];
+
 pub fn parse_diff(input: &str) -> Vec<DiffHunk> {
     let mut hunks = Vec::new();
     let mut current_old_file = String::new();
@@ -79,6 +95,7 @@ pub fn parse_diff(input: &str) -> Vec<DiffHunk> {
     let mut current_file_header = String::new();
     let mut current_header: Option<String> = None;
     let mut current_lines: Vec<String> = Vec::new();
+    let mut current_unsupported: Option<String> = None;
 
     for line in input.lines() {
         if line.starts_with("diff --git") {
@@ -91,12 +108,24 @@ pub fn parse_diff(input: &str) -> Vec<DiffHunk> {
                     file_header: current_file_header.clone(),
                     header,
                     lines: std::mem::take(&mut current_lines),
+                    unsupported_metadata: current_unsupported.clone(),
                 });
             }
             current_file_header.clear();
             current_old_file.clear();
             current_new_file.clear();
-        } else if line.starts_with("--- ") {
+            current_unsupported = None;
+        } else if current_unsupported.is_none() {
+            // Check for unsupported preamble metadata before --- line
+            if let Some(prefix) = UNSUPPORTED_PREAMBLE_PREFIXES
+                .iter()
+                .find(|p| line.starts_with(*p))
+            {
+                current_unsupported = Some(prefix.trim().to_string());
+            }
+        }
+
+        if line.starts_with("--- ") {
             current_file_header = line.to_string();
             current_old_file = strip_diff_prefix(line).to_string();
         } else if line.starts_with("+++ ") {
@@ -113,6 +142,7 @@ pub fn parse_diff(input: &str) -> Vec<DiffHunk> {
                     file_header: current_file_header.clone(),
                     header,
                     lines: std::mem::take(&mut current_lines),
+                    unsupported_metadata: current_unsupported.clone(),
                 });
             }
             current_header = Some(line.to_string());
@@ -130,6 +160,7 @@ pub fn parse_diff(input: &str) -> Vec<DiffHunk> {
             file_header: current_file_header,
             header,
             lines: current_lines,
+            unsupported_metadata: current_unsupported,
         });
     }
 
@@ -144,4 +175,16 @@ fn display_file(old: &str, new: &str) -> String {
     } else {
         new.to_string()
     }
+}
+
+/// Check if a hunk has unsupported metadata and return an error if so.
+pub fn check_supported(hunk: &DiffHunk, id: &str) -> Result<()> {
+    if let Some(ref metadata) = hunk.unsupported_metadata {
+        anyhow::bail!(
+            "hunk {} involves '{}' which is not supported for hunk-level operations",
+            id,
+            metadata
+        );
+    }
+    Ok(())
 }

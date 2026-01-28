@@ -158,6 +158,8 @@ pub fn apply_hunks(ids: &[String], mode: ApplyMode, lines: Option<(usize, usize)
             .find(|(hunk_id, _)| hunk_id == id)
             .ok_or_else(|| anyhow::anyhow!("hunk {} not found (re-run 'hunks')", id))?;
 
+        crate::diff::check_supported(hunk, id)?;
+
         let reverse = matches!(mode, ApplyMode::Unstage | ApplyMode::Discard);
         let patched_hunk = if let Some((start, end)) = lines {
             slice_hunk(hunk, start, end, reverse)?
@@ -236,6 +238,8 @@ pub fn commit_hunks(ids: &[String], message: &str) -> Result<()> {
             .find(|(hunk_id, _)| hunk_id == id)
             .ok_or_else(|| anyhow::anyhow!("hunk {} not found (re-run 'hunks')", id))?;
 
+        crate::diff::check_supported(hunk, id)?;
+
         let patched_hunk = if ranges.is_empty() {
             (*hunk).clone()
         } else {
@@ -282,6 +286,8 @@ pub fn undo_hunks(ids: &[String], commit: &str, lines: Option<(usize, usize)>) -
             .find(|(hunk_id, _)| hunk_id == id)
             .ok_or_else(|| anyhow::anyhow!("hunk {} not found in commit {}", id, commit))?;
 
+        crate::diff::check_supported(hunk, id)?;
+
         let patched_hunk = if let Some((start, end)) = lines {
             slice_hunk(hunk, start, end, true)?
         } else {
@@ -306,6 +312,7 @@ pub fn undo_files(files: &[String], commit: &str) -> Result<()> {
             .iter()
             .any(|f| f == &hunk.file || f == &hunk.old_file || f == &hunk.new_file)
         {
+            crate::diff::check_supported(hunk, &hunk.file)?;
             combined_patch.push_str(&build_patch(hunk));
             matched_files.extend(
                 files
@@ -394,6 +401,7 @@ fn slice_hunk_multi(hunk: &DiffHunk, ranges: &[(usize, usize)], reverse: bool) -
         file_header: hunk.file_header.clone(),
         header: new_header,
         lines: new_lines,
+        unsupported_metadata: hunk.unsupported_metadata.clone(),
     })
 }
 
@@ -588,16 +596,20 @@ pub fn split(
     let hunks = crate::diff::parse_diff(&diff_output);
     let identified = assign_ids(&hunks);
 
-    // Validate all referenced IDs exist
+    // Validate all referenced IDs exist and are supported
     for group in pick_groups {
         for (id, _) in &group.ids {
-            if !identified.iter().any(|(hid, _)| hid == id) {
-                anyhow::bail!(
-                    "hunk {} not found in commit {}",
-                    id,
-                    &target_sha[..7.min(target_sha.len())]
-                );
-            }
+            let (_, hunk) = identified
+                .iter()
+                .find(|(hid, _)| hid == id)
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "hunk {} not found in commit {}",
+                        id,
+                        &target_sha[..7.min(target_sha.len())]
+                    )
+                })?;
+            crate::diff::check_supported(hunk, id)?;
         }
     }
 

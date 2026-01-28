@@ -212,19 +212,34 @@ pub fn commit_hunks(ids: &[String], message: &str) -> Result<()> {
     let hunks = crate::diff::parse_diff(&diff_output);
     let identified = assign_ids(&hunks);
 
-    // Build patch from all requested hunks
-    let mut combined_patch = String::new();
+    // Build patch from all requested hunks, grouping ranges by hunk ID
+    let mut hunk_ranges: Vec<(String, Vec<(usize, usize)>)> = Vec::new();
     for raw_id in ids {
         let (id, lines) = parse_id_range(raw_id)?;
+        if let Some(entry) = hunk_ranges.iter_mut().find(|(eid, _)| eid == id) {
+            if let Some(range) = lines {
+                entry.1.push(range);
+            }
+        } else {
+            let ranges = match lines {
+                Some(range) => vec![range],
+                None => vec![],
+            };
+            hunk_ranges.push((id.to_string(), ranges));
+        }
+    }
+
+    let mut combined_patch = String::new();
+    for (id, ranges) in &hunk_ranges {
         let (_, hunk) = identified
             .iter()
             .find(|(hunk_id, _)| hunk_id == id)
             .ok_or_else(|| anyhow::anyhow!("hunk {} not found (re-run 'hunks')", id))?;
 
-        let patched_hunk = if let Some((start, end)) = lines {
-            slice_hunk(hunk, start, end, false)?
-        } else {
+        let patched_hunk = if ranges.is_empty() {
             (*hunk).clone()
+        } else {
+            slice_hunk_multi(hunk, ranges, false)?
         };
         combined_patch.push_str(&build_patch(&patched_hunk));
         eprintln!("{}", id);
@@ -308,37 +323,38 @@ pub fn undo_files(files: &[String], commit: &str) -> Result<()> {
 /// Lines outside the range have their changes neutralized:
 /// - excluded '+' lines are dropped
 /// - excluded '-' lines become context (the deletion is kept)
+///
 /// Context lines are always preserved for patch validity.
 fn slice_hunk(hunk: &DiffHunk, start: usize, end: usize, reverse: bool) -> Result<DiffHunk> {
+    slice_hunk_multi(hunk, &[(start, end)], reverse)
+}
+
+/// Slice a hunk keeping changes from any of the given 1-based line ranges.
+fn slice_hunk_multi(hunk: &DiffHunk, ranges: &[(usize, usize)], reverse: bool) -> Result<DiffHunk> {
+    let in_any_range = |idx: usize| ranges.iter().any(|(s, e)| idx >= *s && idx <= *e);
+
     let mut new_lines = Vec::new();
     for (i, line) in hunk.lines.iter().enumerate() {
-        let idx = i + 1; // 1-based
-        let in_range = idx >= start && idx <= end;
+        let idx = i + 1;
+        let in_range = in_any_range(idx);
 
-        if line.starts_with('+') {
+        if let Some(rest) = line.strip_prefix('+') {
             if in_range {
                 new_lines.push(line.clone());
             } else if reverse {
-                // For reverse apply: excluded '+' lines exist in the file,
-                // so they must become context for the patch to match.
-                new_lines.push(format!(" {}", &line[1..]));
+                new_lines.push(format!(" {}", rest));
             }
-            // For forward apply: excluded '+' lines are simply dropped
-        } else if line.starts_with('-') {
+        } else if let Some(rest) = line.strip_prefix('-') {
             if in_range {
                 new_lines.push(line.clone());
             } else if !reverse {
-                // For forward apply: excluded '-' lines become context
-                new_lines.push(format!(" {}", &line[1..]));
+                new_lines.push(format!(" {}", rest));
             }
-            // For reverse apply: excluded '-' lines don't exist in the file, drop them
         } else {
-            // context lines: always keep
             new_lines.push(line.clone());
         }
     }
 
-    // Recompute @@ header
     let old_count = new_lines
         .iter()
         .filter(|l| l.starts_with('-') || l.starts_with(' '))
@@ -348,7 +364,6 @@ fn slice_hunk(hunk: &DiffHunk, start: usize, end: usize, reverse: bool) -> Resul
         .filter(|l| l.starts_with('+') || l.starts_with(' '))
         .count();
 
-    // Parse original start lines from header
     let (old_start, new_start) = parse_hunk_starts(&hunk.header)?;
 
     let func_ctx = hunk
@@ -660,16 +675,33 @@ pub fn split(
         let identified = assign_ids(&hunks);
 
         let mut combined_patch = String::new();
+
+        // Group line ranges by hunk ID so same-hunk entries produce one patch
+        let mut hunk_ranges: Vec<(String, Vec<(usize, usize)>)> = Vec::new();
         for (id, lines_range) in &group.ids {
+            if let Some(entry) = hunk_ranges.iter_mut().find(|(eid, _)| eid == id) {
+                if let Some(range) = lines_range {
+                    entry.1.push(*range);
+                }
+            } else {
+                let ranges = match lines_range {
+                    Some(range) => vec![*range],
+                    None => vec![],
+                };
+                hunk_ranges.push((id.clone(), ranges));
+            }
+        }
+
+        for (id, ranges) in &hunk_ranges {
             let (_, hunk) = identified
                 .iter()
                 .find(|(hid, _)| hid == id)
                 .ok_or_else(|| anyhow::anyhow!("hunk {} not found in unstaged changes", id))?;
 
-            let patched_hunk = if let Some((start, end)) = lines_range {
-                slice_hunk(hunk, *start, *end, false)?
-            } else {
+            let patched_hunk = if ranges.is_empty() {
                 (*hunk).clone()
+            } else {
+                slice_hunk_multi(hunk, ranges, false)?
             };
             combined_patch.push_str(&build_patch(&patched_hunk));
         }

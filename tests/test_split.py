@@ -211,9 +211,6 @@ def test_split_with_line_ranges(git_agent_exe, repo):
     ids = _get_hunk_ids(git_agent_exe, repo, "--commit", "HEAD")
     assert len(ids) >= 1
 
-    # Show the hunk to understand line numbering
-    show = run_git_agent(git_agent_exe, repo, "show", ids[0], "--commit", "HEAD")
-
     # Pick first few lines of the hunk
     result = run_git_agent(
         git_agent_exe, repo, "split", "HEAD",
@@ -354,6 +351,36 @@ def test_split_invalid_hunk_id(git_agent_exe, repo):
     )
     assert result.returncode != 0
     assert "not found" in result.stderr
+
+
+def test_split_same_hunk_multiple_ranges(git_agent_exe, repo):
+    """Split with same hunk ID repeated for non-contiguous line ranges."""
+    lines = ["line{}\n".format(i) for i in range(1, 11)]
+    create_file(repo, "f.txt", "".join(lines))
+
+    new_lines = list(lines)
+    new_lines[1] = "line2 ALPHA\n"
+    new_lines[3] = "line4 ALPHA\n"
+    new_lines[7] = "line8 BETA\n"
+    new_lines[9] = "line10 BETA\n"
+    modify_file(repo, "f.txt", "".join(new_lines))
+    run_git(repo, "add", "f.txt")
+    run_git(repo, "commit", "-m", "modify top and bottom")
+
+    ids = _get_hunk_ids(git_agent_exe, repo, "--commit", "HEAD")
+    assert len(ids) == 1
+    hunk_id = ids[0]
+
+    # Same hunk ID with two non-contiguous ranges in one --pick group
+    result = run_git_agent(
+        git_agent_exe, repo, "split", "HEAD",
+        "--pick", f"{hunk_id}:2-5", f"{hunk_id}:9-12",
+        "--message", "alpha and beta changes",
+    )
+    assert result.returncode == 0, f"split failed: {result.stderr}"
+
+    subjects = _commit_subjects(repo)
+    assert "alpha and beta changes" in subjects
 
 
 def test_split_pick_missing_message(git_agent_exe, repo):

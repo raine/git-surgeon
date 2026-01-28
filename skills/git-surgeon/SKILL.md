@@ -60,17 +60,22 @@ git-surgeon undo-file <file1> <file2> ... --from <commit>
 
 # Split a commit into multiple commits by hunk selection
 git-surgeon split HEAD \
-  --pick <id1> <id2> --message "first commit" \
+  --pick <id1> <id2> -m "first commit" \
   --rest-message "remaining changes"
+
+# Split with subject + body (multiple -m flags, like git commit)
+git-surgeon split HEAD \
+  --pick <id1> -m "Add feature" -m "Detailed description here." \
+  --rest-message "Other changes" --rest-message "Body for rest."
 
 # Split with line ranges (repeat same ID for non-contiguous ranges)
 git-surgeon split <commit> \
-  --pick <id>:1-11 <id>:20-30 <id2> --message "partial split"
+  --pick <id>:1-11 <id>:20-30 <id2> -m "partial split"
 
 # Split into three+ commits
 git-surgeon split HEAD \
-  --pick <id1> --message "first" \
-  --pick <id2> --message "second" \
+  --pick <id1> -m "first" \
+  --pick <id2> -m "second" \
   --rest-message "rest"
 ```
 
@@ -99,11 +104,12 @@ git-surgeon split HEAD \
 ## Splitting commits
 
 1. List hunks in the commit: `git-surgeon hunks --commit <sha>`
-2. Split by picking hunks: `git-surgeon split <sha> --pick <id1> --message "first" --rest-message "second"`
-3. Use `id:range` syntax for partial hunks: `--pick <id>:5-20`
+2. Split by picking hunks: `git-surgeon split <sha> --pick <id1> -m "first" --rest-message "second"`
+3. Use multiple `-m` flags for subject + body: `--pick <id> -m "Subject" -m "Body paragraph"`
+4. Use `id:range` syntax for partial hunks: `--pick <id>:5-20`
    - For non-contiguous lines, repeat the ID: `--pick <id>:2-6 <id>:34-37`
-4. Works on HEAD (direct reset) or earlier commits (via rebase)
-5. Requires a clean working tree
+5. Works on HEAD (direct reset) or earlier commits (via rebase)
+6. Requires a clean working tree
 
 ## Hunk IDs
 

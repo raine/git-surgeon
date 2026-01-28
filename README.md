@@ -228,25 +228,32 @@ each new commit. Works on HEAD (direct reset) or earlier commits (via rebase).
 ```bash
 # Split HEAD into two commits
 git-surgeon split HEAD \
-  --pick a1b2c3d e4f5678 --message "add pagination" \
+  --pick a1b2c3d e4f5678 -m "add pagination" \
   --rest-message "filter deleted users"
+
+# With subject + body (multiple -m flags, like git commit)
+git-surgeon split HEAD \
+  --pick a1b2c3d -m "Add pagination" -m "Adds page and per_page params." \
+  --rest-message "Other changes" --rest-message "Body paragraph."
 
 # With line ranges (id:range inline syntax)
 # Repeat same ID for non-contiguous ranges
 git-surgeon split abc1234 \
   --pick a1b2c3d:1-11 a1b2c3d:20-30 e4f5678 \
-  --message "add pagination"
+  -m "add pagination"
 
 # Multiple splits (more than two commits)
 git-surgeon split abc1234 \
-  --pick a1b2c3d --message "add pagination" \
-  --pick e4f5678 --message "filter deleted users" \
+  --pick a1b2c3d -m "add pagination" \
+  --pick e4f5678 -m "filter deleted users" \
   --rest-message "remaining cleanup"
 ```
 
 Each `--pick` group specifies hunk IDs (with optional `:start-end` line ranges)
-followed by a `--message`. Remaining unpicked hunks are committed with
-`--rest-message` (defaults to the original commit message if omitted).
+followed by `-m`/`--message`. Use multiple `-m` flags to add a commit body
+(joined with blank lines, like `git commit`). Remaining unpicked hunks are
+committed with `--rest-message` (defaults to the original commit message if
+omitted; supports multiple values for body).
 
 Requires a clean working tree. For non-HEAD commits, uses interactive rebase
 with `--autostash`.

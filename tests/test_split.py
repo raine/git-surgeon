@@ -673,3 +673,83 @@ def test_split_picks_second_hunk_in_same_file(git_agent_exe, repo):
                 f"Expected TOP MODIFIED in rest commit"
             assert "BOTTOM MODIFIED" not in show.stdout, \
                 f"BOTTOM MODIFIED should NOT be in rest commit"
+
+
+def test_split_with_message_body(git_agent_exe, repo):
+    """Test split with subject and body via multiple -m flags."""
+    # Create a file with two separate regions
+    content = "top\n" + "ctx\n" * 20 + "bottom\n"
+    create_file(repo, "f.txt", content)
+
+    # Make a commit that modifies both regions
+    new_content = "top modified\n" + "ctx\n" * 20 + "bottom modified\n"
+    modify_file(repo, "f.txt", new_content)
+    run_git(repo, "add", "f.txt")
+    run_git(repo, "commit", "-m", "modify both regions")
+
+    # Get hunk IDs from the commit we want to split
+    ids = _get_hunk_ids(git_agent_exe, repo, "--commit", "HEAD")
+    assert len(ids) == 2
+
+    result = run_git_agent(
+        git_agent_exe,
+        repo,
+        "split",
+        "HEAD",
+        "--pick",
+        ids[0],
+        "-m",
+        "First change",
+        "-m",
+        "This is the body paragraph.",
+        "--rest-message",
+        "Remaining",
+        "--rest-message",
+        "Rest body paragraph.",
+    )
+    assert result.returncode == 0, result.stderr
+
+    # Verify first commit has subject and body
+    log = run_git(repo, "log", "--format=%B", "-n", "1", "HEAD~1")
+    assert "First change" in log.stdout
+    assert "This is the body paragraph." in log.stdout
+    # Verify blank line separates subject and body
+    assert "First change\n\nThis is the body" in log.stdout
+
+    # Verify rest commit has subject and body
+    log = run_git(repo, "log", "--format=%B", "-n", "1", "HEAD")
+    assert "Remaining" in log.stdout
+    assert "Rest body paragraph." in log.stdout
+    assert "Remaining\n\nRest body" in log.stdout
+
+
+def test_split_pick_after_rest_message_fails(git_agent_exe, repo):
+    """Error when --pick appears after --rest-message."""
+    content = "top\n" + "ctx\n" * 20 + "bottom\n"
+    create_file(repo, "f.txt", content)
+
+    new_content = "top modified\n" + "ctx\n" * 20 + "bottom modified\n"
+    modify_file(repo, "f.txt", new_content)
+    run_git(repo, "add", "f.txt")
+    run_git(repo, "commit", "-m", "modify both")
+
+    ids = _get_hunk_ids(git_agent_exe, repo, "--commit", "HEAD")
+
+    result = run_git_agent(
+        git_agent_exe,
+        repo,
+        "split",
+        "HEAD",
+        "--pick",
+        ids[0],
+        "-m",
+        "first",
+        "--rest-message",
+        "rest",
+        "--pick",
+        ids[1],
+        "-m",
+        "should fail",
+    )
+    assert result.returncode != 0
+    assert "not allowed after --rest-message" in result.stderr

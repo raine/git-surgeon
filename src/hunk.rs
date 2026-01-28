@@ -4,7 +4,7 @@ use std::process::Command;
 
 use crate::diff::DiffHunk;
 use crate::hunk_id::assign_ids;
-use crate::patch::{apply_patch, build_patch, slice_hunk, slice_hunk_multi, ApplyMode};
+use crate::patch::{ApplyMode, apply_patch, build_patch, slice_hunk, slice_hunk_multi};
 
 const MAX_PREVIEW_LINES: usize = 4;
 
@@ -103,11 +103,7 @@ fn find_hunk_by_id(id: &str, staged: bool) -> Result<DiffHunk> {
         .ok_or_else(|| anyhow::anyhow!("hunk {} not found (re-run 'hunks')", id))
 }
 
-pub fn apply_hunks(
-    ids: &[String],
-    mode: ApplyMode,
-    lines: Option<(usize, usize)>,
-) -> Result<()> {
+pub fn apply_hunks(ids: &[String], mode: ApplyMode, lines: Option<(usize, usize)>) -> Result<()> {
     if lines.is_some() && ids.len() != 1 {
         anyhow::bail!("--lines requires exactly one hunk ID");
     }
@@ -405,7 +401,7 @@ pub fn fixup(commit: &str) -> Result<()> {
 pub fn split(
     commit: &str,
     pick_groups: &[crate::PickGroup],
-    rest_message: Option<&str>,
+    rest_message: Option<&[String]>,
 ) -> Result<()> {
     // Check working tree is clean
     let status = Command::new("git")
@@ -457,7 +453,14 @@ pub fn split(
         &target_sha,
     ]))?;
     let original_message = original_message.trim();
-    let rest_msg = rest_message.unwrap_or(original_message);
+    let rest_msg_joined;
+    let rest_msg = match rest_message {
+        Some(parts) => {
+            rest_msg_joined = parts.join("\n\n");
+            rest_msg_joined.as_str()
+        }
+        None => original_message,
+    };
 
     // Collect all picked IDs to determine "rest"
     let mut all_picked: HashSet<String> = HashSet::new();
@@ -544,8 +547,9 @@ pub fn split(
         apply_patch(&combined_patch, &ApplyMode::Stage)?;
 
         // Commit
+        let message = group.message_parts.join("\n\n");
         let output = Command::new("git")
-            .args(["commit", "-m", &group.message])
+            .args(["commit", "-m", &message])
             .output()
             .context("failed to commit")?;
         if !output.status.success() {
@@ -554,7 +558,10 @@ pub fn split(
                 String::from_utf8_lossy(&output.stderr)
             );
         }
-        eprintln!("committed: {}", group.message);
+
+        // Print only the subject line
+        let subject = message.lines().next().unwrap_or(&message);
+        eprintln!("committed: {}", subject);
     }
 
     // Stage and commit remaining changes (if any)
@@ -577,7 +584,10 @@ pub fn split(
                 String::from_utf8_lossy(&output.stderr)
             );
         }
-        eprintln!("committed: {}", rest_msg);
+
+        // Print only the subject line
+        let subject = rest_msg.lines().next().unwrap_or(rest_msg);
+        eprintln!("committed: {}", subject);
     }
 
     // Continue rebase if non-HEAD

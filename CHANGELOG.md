@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.3 (2026-01-29)
+
+- Add `install-skill` command to install the AI assistant skill for Claude Code,
+  OpenCode, and Codex
+
 ## v0.1.2 (2026-01-28)
 
 - Add `commit` command to stage hunks and commit in one step

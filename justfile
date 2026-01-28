@@ -42,10 +42,11 @@ run *ARGS:
 test *ARGS: build
     #!/usr/bin/env bash
     set -euo pipefail
+    source tests/venv/bin/activate
     quiet_flag=""
     [[ -n "${CLAUDECODE:-}" ]] && quiet_flag="-q"
     if [ $# -eq 0 ]; then
-        pytest tests/ $quiet_flag
+        pytest tests/ -n auto $quiet_flag
     else
         pytest $quiet_flag "$@"
     fi

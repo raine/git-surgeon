@@ -63,9 +63,9 @@ git-surgeon split HEAD \
   --pick <id1> <id2> --message "first commit" \
   --rest-message "remaining changes"
 
-# Split with line ranges
+# Split with line ranges (repeat same ID for non-contiguous ranges)
 git-surgeon split <commit> \
-  --pick <id>:1-11 <id2> --message "partial split"
+  --pick <id>:1-11 <id>:20-30 <id2> --message "partial split"
 
 # Split into three+ commits
 git-surgeon split HEAD \
@@ -101,6 +101,7 @@ git-surgeon split HEAD \
 1. List hunks in the commit: `git-surgeon hunks --commit <sha>`
 2. Split by picking hunks: `git-surgeon split <sha> --pick <id1> --message "first" --rest-message "second"`
 3. Use `id:range` syntax for partial hunks: `--pick <id>:5-20`
+   - For non-contiguous lines, repeat the ID: `--pick <id>:2-6 <id>:34-37`
 4. Works on HEAD (direct reset) or earlier commits (via rebase)
 5. Requires a clean working tree
 

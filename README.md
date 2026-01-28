@@ -232,8 +232,9 @@ git-surgeon split HEAD \
   --rest-message "filter deleted users"
 
 # With line ranges (id:range inline syntax)
+# Repeat same ID for non-contiguous ranges
 git-surgeon split abc1234 \
-  --pick a1b2c3d:1-11 e4f5678 f9g0h1i:5-20 \
+  --pick a1b2c3d:1-11 a1b2c3d:20-30 e4f5678 \
   --message "add pagination"
 
 # Multiple splits (more than two commits)

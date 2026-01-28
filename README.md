@@ -1,11 +1,9 @@
 # git-surgeon
 
-Surgical, non-interactive git hunk control for AI agents.
-
-AI coding agents write code across multiple files but commit everything at once.
-`git-surgeon` gives them the same selective staging power as `git add -p`, but
-without the interactive prompts. Agents can list hunks, stage specific changes
-by ID, and even split a single hunk across commits using line ranges.
+`git-surgeon` gives AI agents surgical control over git changes without
+interactive prompts. Stage, unstage, or discard individual hunks. Commit hunks
+directly with line-range precision. Restructure history by splitting commits or
+folding fixes into earlier ones.
 
 ## Quick start
 
@@ -352,6 +350,79 @@ groups into a single hunk. The agent uses `show` to see line numbers, then
 ⏺ Bash(git add users.py && git commit -m "filter soft-deleted users in get_user")
   ⎿  [feature-users de99d59] filter soft-deleted users in get_user
       1 file changed, 3 insertions(+), 1 deletion(-)
+```
+
+## Example: splitting a commit that mixes concerns
+
+A commit mixes three unrelated changes: logging, pagination, and active user
+filtering. The agent uses `hunks --commit` to see the changes, `show --commit`
+to examine line numbers, then `split` with line ranges to separate concerns:
+
+```
+❯ split the big pagination commit that mixes concerns into multiple commits
+
+⏺ Bash(git log --oneline -5)
+  ⎿  dda5d0e add readme
+     945381f add pagination, logging, and active user filtering
+     386b2fe initial app setup
+
+⏺ Bash(git-surgeon hunks --commit 945381f)
+  ⎿  a811273 config.py (+3 -1)
+       -LOG_LEVEL = "INFO"
+       +LOG_LEVEL = "DEBUG"
+       +LOG_FORMAT = "%(asctime)s %(name)s %(levelname)s %(message)s"
+       +MAX_PAGE_SIZE = 100
+
+     37562e9 models.py (+11 -2)
+       -    def __init__(self, id, name, email):
+       +    def __init__(self, id, name, email, active=True):
+       ... (+10 more lines)
+
+     8c1940f server.py (+19 -4)
+       +import logging
+       +logging.basicConfig(level="INFO")
+       +logger = logging.getLogger(__name__)
+       ... (+16 more lines)
+
+⏺ The commit mixes three concerns. Let me examine each hunk with line numbers.
+
+⏺ Bash(git-surgeon show a811273 --commit 945381f)
+  ⎿  @@ -1,4 +1,6 @@
+     1: DATABASE_URL = "sqlite:///app.db"
+     ... +6 lines
+     5:+LOG_LEVEL = "DEBUG"
+     6:+LOG_FORMAT = "%(asctime)s %(name)s %(levelname)s %(message)s"
+     7:+MAX_PAGE_SIZE = 100
+
+⏺ Bash(git-surgeon show 8c1940f --commit 945381f)
+  ⎿  @@ -1,29 +1,44 @@
+      1: from flask import Flask, jsonify, request
+      2:+import logging
+      ... +28 lines
+     20:+    page = request.args.get("page", 1, type=int)
+     21:+    per_page = request.args.get("per_page", 10, type=int)
+     ... +8 lines
+     34:+    logger.info(f"Fetching user {user_id}")
+     ... +2 lines
+     37:+        logger.warning(f"User {user_id} not found")
+     ... +11 lines
+
+⏺ Now I can split by picking specific hunks and line ranges for each concern.
+
+⏺ Bash(git-surgeon split 945381f \
+    --pick a811273:5-6 8c1940f:2 8c1940f:5-6 8c1940f:34 8c1940f:37 -m "add logging" \
+    --pick a811273:7 8c1940f:20-29 -m "add pagination to user listing" \
+    --rest-message "add active user filtering")
+  ⎿  committed: add logging
+     committed: add pagination to user listing
+     committed: add active user filtering
+
+⏺ Bash(git log --oneline -5)
+  ⎿  64b55f1 add readme
+     1722eeb add active user filtering
+     e7171e3 add pagination to user listing
+     ae9b485 add logging
+     386b2fe initial app setup
 ```
 
 ## Requirements

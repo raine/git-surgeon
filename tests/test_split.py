@@ -227,6 +227,34 @@ def test_split_with_line_ranges(git_agent_exe, repo):
     assert "remaining changes" in subjects
 
 
+def test_split_with_single_line_range(git_agent_exe, repo):
+    """Split with inline id:N syntax for a single line."""
+    lines = ["line{}\n".format(i) for i in range(1, 11)]
+    create_file(repo, "f.txt", "".join(lines))
+
+    new_lines = list(lines)
+    new_lines[1] = "line2 modified\n"
+    new_lines[3] = "line4 modified\n"
+    modify_file(repo, "f.txt", "".join(new_lines))
+    run_git(repo, "add", "f.txt")
+    run_git(repo, "commit", "-m", "modify two lines")
+
+    ids = _get_hunk_ids(git_agent_exe, repo, "--commit", "HEAD")
+    assert len(ids) >= 1
+
+    # Use single-line syntax id:N (no dash)
+    result = run_git_agent(
+        git_agent_exe, repo, "split", "HEAD",
+        "--pick", f"{ids[0]}:2", "--message", "first line change",
+        "--rest-message", "second line change",
+    )
+    assert result.returncode == 0, result.stderr
+
+    subjects = _commit_subjects(repo)
+    assert "first line change" in subjects
+    assert "second line change" in subjects
+
+
 def test_split_multiple_ids_single_group(git_agent_exe, repo):
     """Pick multiple hunks into a single commit."""
     create_file(repo, "a.txt", "a\n")

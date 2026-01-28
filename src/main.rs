@@ -178,12 +178,14 @@ fn parse_pick_id(s: &str) -> anyhow::Result<(String, Option<(usize, usize)>)> {
 }
 
 fn parse_line_range(s: &str) -> Result<(usize, usize), String> {
-    let parts: Vec<&str> = s.split('-').collect();
-    if parts.len() != 2 {
-        return Err("expected format: START-END (e.g. 5-30)".to_string());
-    }
-    let start: usize = parts[0].parse().map_err(|_| "invalid start number".to_string())?;
-    let end: usize = parts[1].parse().map_err(|_| "invalid end number".to_string())?;
+    let (start, end) = if let Some((a, b)) = s.split_once('-') {
+        let start: usize = a.parse().map_err(|_| "invalid start number".to_string())?;
+        let end: usize = b.parse().map_err(|_| "invalid end number".to_string())?;
+        (start, end)
+    } else {
+        let n: usize = s.parse().map_err(|_| "invalid line number".to_string())?;
+        (n, n)
+    };
     if start == 0 || end == 0 || start > end {
         return Err("range must be 1-based and start <= end".to_string());
     }

@@ -667,12 +667,23 @@ pub fn split(
     }
 
     // Now changes are in the working tree. Stage and commit each pick group.
-    // We need to re-read the diff since changes are now unstaged.
+    // Assign IDs once from the initial diff so they remain stable across groups.
+    // Each iteration re-reads the diff for fresh context/line numbers, then
+    // resolves user-supplied IDs to current hunks via file path.
+    let initial_diff = crate::diff::run_git_diff(false, None)?;
+    let initial_hunks = crate::diff::parse_diff(&initial_diff);
+    let initial_identified = assign_ids(&initial_hunks);
+
+    // Map original ID -> file path for cross-referencing with re-read diffs
+    let id_to_file: std::collections::HashMap<String, String> = initial_identified
+        .iter()
+        .map(|(id, hunk)| (id.clone(), hunk.file.clone()))
+        .collect();
+
     for group in pick_groups {
-        // For each hunk in this group, build patch and stage it
+        // Re-read current diff for fresh context that matches the index
         let diff_output = crate::diff::run_git_diff(false, None)?;
-        let hunks = crate::diff::parse_diff(&diff_output);
-        let identified = assign_ids(&hunks);
+        let current_hunks = crate::diff::parse_diff(&diff_output);
 
         let mut combined_patch = String::new();
 
@@ -693,13 +704,17 @@ pub fn split(
         }
 
         for (id, ranges) in &hunk_ranges {
-            let (_, hunk) = identified
+            // Resolve original ID to file, then find the first current hunk for that file
+            let file = id_to_file
+                .get(id)
+                .ok_or_else(|| anyhow::anyhow!("hunk {} not found in unstaged changes", id))?;
+            let hunk = current_hunks
                 .iter()
-                .find(|(hid, _)| hid == id)
+                .find(|h| h.file == *file)
                 .ok_or_else(|| anyhow::anyhow!("hunk {} not found in unstaged changes", id))?;
 
             let patched_hunk = if ranges.is_empty() {
-                (*hunk).clone()
+                hunk.clone()
             } else {
                 slice_hunk_multi(hunk, ranges, false)?
             };

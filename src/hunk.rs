@@ -676,14 +676,11 @@ pub fn split(
     }
 
     // Now changes are in the working tree. Stage and commit each pick group.
-    // Assign IDs once from the initial diff so they remain stable across groups.
-    // Each iteration re-reads the diff for fresh context/line numbers, then
-    // resolves user-supplied IDs to current hunks via file path.
+
+    // Map original ID -> file for fallback when hunk ID changes after partial apply
     let initial_diff = crate::diff::run_git_diff(false, None)?;
     let initial_hunks = crate::diff::parse_diff(&initial_diff);
     let initial_identified = assign_ids(&initial_hunks);
-
-    // Map original ID -> file path for cross-referencing with re-read diffs
     let id_to_file: std::collections::HashMap<String, String> = initial_identified
         .iter()
         .map(|(id, hunk)| (id.clone(), hunk.file.clone()))
@@ -693,6 +690,7 @@ pub fn split(
         // Re-read current diff for fresh context that matches the index
         let diff_output = crate::diff::run_git_diff(false, None)?;
         let current_hunks = crate::diff::parse_diff(&diff_output);
+        let current_identified = assign_ids(&current_hunks);
 
         let mut combined_patch = String::new();
 
@@ -713,13 +711,18 @@ pub fn split(
         }
 
         for (id, ranges) in &hunk_ranges {
-            // Resolve original ID to file, then find the first current hunk for that file
-            let file = id_to_file
-                .get(id)
-                .ok_or_else(|| anyhow::anyhow!("hunk {} not found in unstaged changes", id))?;
-            let hunk = current_hunks
+            // Find hunk by ID to handle multiple hunks in the same file correctly.
+            // Fall back to file match for line-range scenarios where the hunk ID
+            // changes after partial apply.
+            let hunk = current_identified
                 .iter()
-                .find(|h| h.file == *file)
+                .find(|(hunk_id, _)| hunk_id == id)
+                .map(|(_, h)| *h)
+                .or_else(|| {
+                    id_to_file
+                        .get(id)
+                        .and_then(|file| current_hunks.iter().find(|h| &h.file == file))
+                })
                 .ok_or_else(|| anyhow::anyhow!("hunk {} not found in unstaged changes", id))?;
 
             let patched_hunk = if ranges.is_empty() {

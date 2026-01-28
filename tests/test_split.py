@@ -617,3 +617,59 @@ def test_split_pick_missing_message(git_agent_exe, repo):
         "abc1234",
     )
     assert result.returncode != 0
+
+
+def test_split_picks_second_hunk_in_same_file(git_agent_exe, repo):
+    """Picking the second hunk in a file should stage that hunk, not the first.
+
+    This test exposes a bug where split remaps hunks by file path only,
+    causing the wrong hunk to be staged when multiple hunks exist in one file.
+    """
+    # Create a file with two separate regions (enough context lines to create 2 hunks)
+    content = "TOP ORIGINAL\n" + "ctx\n" * 20 + "BOTTOM ORIGINAL\n"
+    create_file(repo, "f.txt", content)
+
+    # Modify both regions to create two hunks
+    new_content = "TOP MODIFIED\n" + "ctx\n" * 20 + "BOTTOM MODIFIED\n"
+    modify_file(repo, "f.txt", new_content)
+    run_git(repo, "add", "f.txt")
+    run_git(repo, "commit", "-m", "modify both regions")
+
+    # Get hunk IDs - should be 2 hunks in the same file
+    ids = _get_hunk_ids(git_agent_exe, repo, "--commit", "HEAD")
+    assert len(ids) == 2, f"Expected 2 hunks, got {len(ids)}"
+
+    # Pick the SECOND hunk specifically (the bottom change)
+    result = run_git_agent(
+        git_agent_exe,
+        repo,
+        "split",
+        "HEAD",
+        "--pick",
+        ids[1],  # Pick second hunk, not first
+        "--message",
+        "modify bottom only",
+        "--rest-message",
+        "modify top only",
+    )
+    assert result.returncode == 0, result.stderr
+
+    # Verify the "modify bottom only" commit has ONLY the bottom change
+    log = run_git(repo, "log", "--all", "--format=%H %s")
+    for line in log.stdout.strip().split("\n"):
+        if "modify bottom only" in line:
+            sha = line.split()[0]
+            show = run_git(repo, "show", sha)
+            # The picked commit should have BOTTOM change, NOT TOP
+            assert "BOTTOM MODIFIED" in show.stdout, \
+                f"Expected BOTTOM MODIFIED in picked commit, got:\n{show.stdout}"
+            assert "TOP MODIFIED" not in show.stdout, \
+                f"TOP MODIFIED should NOT be in picked commit (wrong hunk staged)"
+        elif "modify top only" in line:
+            sha = line.split()[0]
+            show = run_git(repo, "show", sha)
+            # The rest commit should have TOP change, NOT BOTTOM
+            assert "TOP MODIFIED" in show.stdout, \
+                f"Expected TOP MODIFIED in rest commit"
+            assert "BOTTOM MODIFIED" not in show.stdout, \
+                f"BOTTOM MODIFIED should NOT be in rest commit"

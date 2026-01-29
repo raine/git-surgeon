@@ -5,6 +5,13 @@ interactive prompts. Stage, unstage, or discard individual hunks. Commit hunks
 directly with line-range precision. Restructure history by splitting commits or
 folding fixes into earlier ones.
 
+**Highlights**
+
+- Stage specific lines from a hunk, not just whole hunks
+  ([example](#example-splitting-a-hunk-across-commits))
+- Split commits that mix concerns into focused commits
+  ([example](#example-splitting-a-commit-that-mixes-concerns))
+
 ## Quick start
 
 ### 1. Install
@@ -245,9 +252,9 @@ git-surgeon squash HEAD~3 --force -m "squash with merges"
 
 The target commit must be an ancestor of HEAD. If the range contains merge
 commits, use `--force` to flatten them into the squashed commit. Uncommitted
-changes are autostashed and restored after squashing. The author from the
-oldest commit is preserved by default; use `--no-preserve-author` to use the
-current user instead.
+changes are autostashed and restored after squashing. The author from the oldest
+commit is preserved by default; use `--no-preserve-author` to use the current
+user instead.
 
 ---
 

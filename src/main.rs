@@ -120,6 +120,9 @@ enum Commands {
         /// Force squash even if range contains merge commits (which will be flattened)
         #[arg(long)]
         force: bool,
+        /// Do not preserve the author from the oldest commit (use current user instead)
+        #[arg(long)]
+        no_preserve_author: bool,
     },
     /// Install the git-surgeon skill for AI coding assistants
     InstallSkill {
@@ -294,8 +297,9 @@ fn main() -> Result<()> {
             commit,
             message,
             force,
+            no_preserve_author,
         } => {
-            hunk::squash(&commit, &message.join("\n\n"), force)?;
+            hunk::squash(&commit, &message.join("\n\n"), force, !no_preserve_author)?;
         }
         Commands::InstallSkill {
             claude,

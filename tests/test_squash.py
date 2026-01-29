@@ -193,3 +193,63 @@ def test_squash_not_ancestor_errors(exe, repo):
     result = run_git_agent(exe, repo, "squash", other_sha[:7], "-m", "nope")
     assert result.returncode != 0
     assert "not an ancestor" in result.stderr.lower()
+
+
+def test_squash_preserves_author_and_date_by_default(exe, repo):
+    """Squash should preserve the author and date from the oldest commit by default."""
+    # Set up a commit with a different author
+    run_git(repo, "config", "user.name", "Original Author")
+    run_git(repo, "config", "user.email", "original@example.com")
+
+    write_file(repo, "a.txt", "initial")
+    run_git(repo, "add", "a.txt")
+    # Use a specific date in the past
+    run_git(repo, "commit", "-m", "first commit", "--date", "2020-01-15T10:30:00")
+
+    # Get the original date
+    original_date = run_git(repo, "log", "-1", "--format=%aI").stdout.strip()
+
+    write_file(repo, "b.txt", "second")
+    run_git(repo, "add", "b.txt")
+    run_git(repo, "commit", "-m", "second commit")
+
+    # Change to a different user for the squash
+    run_git(repo, "config", "user.name", "Current User")
+    run_git(repo, "config", "user.email", "current@example.com")
+
+    result = run_git_agent(exe, repo, "squash", "HEAD~1", "-m", "squashed")
+    assert result.returncode == 0
+
+    # Check that the author is preserved from the first commit
+    author = run_git(repo, "log", "-1", "--format=%an <%ae>").stdout.strip()
+    assert author == "Original Author <original@example.com>"
+
+    # Check that the date is preserved (should match the original, not current time)
+    squashed_date = run_git(repo, "log", "-1", "--format=%aI").stdout.strip()
+    assert squashed_date == original_date
+
+
+def test_squash_no_preserve_author(exe, repo):
+    """Squash with --no-preserve-author uses current user."""
+    # Set up a commit with a different author
+    run_git(repo, "config", "user.name", "Original Author")
+    run_git(repo, "config", "user.email", "original@example.com")
+
+    write_file(repo, "a.txt", "initial")
+    run_git(repo, "add", "a.txt")
+    run_git(repo, "commit", "-m", "first commit")
+
+    write_file(repo, "b.txt", "second")
+    run_git(repo, "add", "b.txt")
+    run_git(repo, "commit", "-m", "second commit")
+
+    # Change to a different user for the squash
+    run_git(repo, "config", "user.name", "Current User")
+    run_git(repo, "config", "user.email", "current@example.com")
+
+    result = run_git_agent(exe, repo, "squash", "HEAD~1", "--no-preserve-author", "-m", "squashed")
+    assert result.returncode == 0
+
+    # Check that the author is the current user
+    author = run_git(repo, "log", "-1", "--format=%an <%ae>").stdout.strip()
+    assert author == "Current User <current@example.com>"

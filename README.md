@@ -245,7 +245,9 @@ git-surgeon squash HEAD~3 --force -m "squash with merges"
 
 The target commit must be an ancestor of HEAD. If the range contains merge
 commits, use `--force` to flatten them into the squashed commit. Uncommitted
-changes are autostashed and restored after squashing.
+changes are autostashed and restored after squashing. The author from the
+oldest commit is preserved by default; use `--no-preserve-author` to use the
+current user instead.
 
 ---
 

@@ -732,7 +732,7 @@ fn check_no_rebase_in_progress() -> Result<()> {
 }
 
 /// Squash commits from <commit>..HEAD into a single commit.
-pub fn squash(commit: &str, message: &str, force: bool) -> Result<()> {
+pub fn squash(commit: &str, message: &str, force: bool, preserve_author: bool) -> Result<()> {
     check_no_rebase_in_progress()?;
 
     // Autostash if working tree is dirty (tracked files only)
@@ -766,6 +766,31 @@ pub fn squash(commit: &str, message: &str, force: bool) -> Result<()> {
     if target_sha == head_sha {
         anyhow::bail!("nothing to squash: target commit is HEAD");
     }
+
+    // Extract author and date from target commit if preserving
+    let (author, author_date) = if preserve_author {
+        let ident = crate::diff::run_git_cmd(Command::new("git").args([
+            "log",
+            "-1",
+            "--format=%an <%ae>",
+            target_sha,
+        ]))?
+        .trim()
+        .to_string();
+
+        let date = crate::diff::run_git_cmd(Command::new("git").args([
+            "log",
+            "-1",
+            "--format=%aI", // ISO 8601 format for unambiguous parsing
+            target_sha,
+        ]))?
+        .trim()
+        .to_string();
+
+        (Some(ident), Some(date))
+    } else {
+        (None, None)
+    };
 
     // Verify target is ancestor of HEAD
     let is_ancestor = Command::new("git")
@@ -814,10 +839,15 @@ pub fn squash(commit: &str, message: &str, force: bool) -> Result<()> {
         }
 
         // Commit (git treats this as the first commit)
-        let output = Command::new("git")
-            .args(["commit", "-m", message])
-            .output()
-            .context("failed to commit")?;
+        let mut commit_cmd = Command::new("git");
+        commit_cmd.args(["commit", "-m", message]);
+        if let Some(ref auth) = author {
+            commit_cmd.args(["--author", auth]);
+        }
+        if let Some(ref date) = author_date {
+            commit_cmd.args(["--date", date]);
+        }
+        let output = commit_cmd.output().context("failed to commit")?;
         if !output.status.success() {
             anyhow::bail!(
                 "git commit failed: {}",
@@ -838,10 +868,15 @@ pub fn squash(commit: &str, message: &str, force: bool) -> Result<()> {
         }
 
         // Commit with new message
-        let output = Command::new("git")
-            .args(["commit", "-m", message])
-            .output()
-            .context("failed to commit")?;
+        let mut commit_cmd = Command::new("git");
+        commit_cmd.args(["commit", "-m", message]);
+        if let Some(ref auth) = author {
+            commit_cmd.args(["--author", auth]);
+        }
+        if let Some(ref date) = author_date {
+            commit_cmd.args(["--date", date]);
+        }
+        let output = commit_cmd.output().context("failed to commit")?;
         if !output.status.success() {
             anyhow::bail!(
                 "git commit failed: {}",

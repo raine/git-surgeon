@@ -2,4 +2,4 @@
 history
 **__pycache__**
 scenarios/
-tests/venv/
+tests/venv

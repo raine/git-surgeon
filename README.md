@@ -428,68 +428,58 @@ to examine line numbers, then `split` with line ranges to separate concerns:
 ```
 ❯ split the big pagination commit that mixes concerns into multiple commits
 
+⏺ Skill(git-surgeon)
+  ⎿  Successfully loaded skill
+
+⏺ I'll help you split the pagination commit. Let me first look at the commit
+  history to identify it, then examine its hunks.
+
 ⏺ Bash(git log --oneline -5)
-  ⎿  dda5d0e add readme
-     945381f add pagination, logging, and active user filtering
-     386b2fe initial app setup
+  ⎿  dda5d0e Add readme
+     945381f Add pagination, logging, and active user filtering
+     386b2fe Initial app setup
 
-⏺ Bash(git-surgeon hunks --commit 945381f)
-  ⎿  a811273 config.py (+3 -1)
-       -LOG_LEVEL = "INFO"
-       +LOG_LEVEL = "DEBUG"
-       +LOG_FORMAT = "%(asctime)s %(name)s %(levelname)s %(message)s"
-       +MAX_PAGE_SIZE = 100
-
-     37562e9 models.py (+11 -2)
-       -    def __init__(self, id, name, email):
-       +    def __init__(self, id, name, email, active=True):
-       ... (+10 more lines)
-
-     8c1940f server.py (+19 -4)
-       +import logging
-       +logging.basicConfig(level="INFO")
-       +logger = logging.getLogger(__name__)
-       ... (+16 more lines)
-
-⏺ The commit mixes three concerns. Let me examine each hunk with line numbers.
-
-⏺ Bash(git-surgeon show a811273 --commit 945381f)
-  ⎿  @@ -1,4 +1,6 @@
+⏺ Bash(git-surgeon hunks --commit 945381f --full)
+  ⎿  a811273 config.py (+3 -1)
      1: DATABASE_URL = "sqlite:///app.db"
-     ... +6 lines
-     5:+LOG_LEVEL = "DEBUG"
-     6:+LOG_FORMAT = "%(asctime)s %(name)s %(levelname)s %(message)s"
-     7:+MAX_PAGE_SIZE = 100
+     2: SECRET_KEY = "dev-secret-key"
+     … +76 lines (ctrl+o to expand)
 
-⏺ Bash(git-surgeon show 8c1940f --commit 945381f)
-  ⎿  @@ -1,29 +1,44 @@
-      1: from flask import Flask, jsonify, request
-      2:+import logging
-      ... +28 lines
-     20:+    page = request.args.get("page", 1, type=int)
-     21:+    per_page = request.args.get("per_page", 10, type=int)
-     ... +8 lines
-     34:+    logger.info(f"Fetching user {user_id}")
-     ... +2 lines
-     37:+        logger.warning(f"User {user_id} not found")
-     ... +11 lines
+⏺ I can see the commit mixes several concerns:
+  1. Logging - LOG_LEVEL, LOG_FORMAT, logging imports, logger.info/warning calls
+  2. Pagination - MAX_PAGE_SIZE, pagination logic in list_users
+  3. Active user filtering - active field in User model and data, filtering in list_users
 
-⏺ Now I can split by picking specific hunks and line ranges for each concern.
+  Let me split this into three focused commits:
 
 ⏺ Bash(git-surgeon split 945381f \
-    --pick a811273:5-6 8c1940f:2 8c1940f:5-6 8c1940f:34 8c1940f:37 -m "add logging" \
-    --pick a811273:7 8c1940f:20-29 -m "add pagination to user listing" \
-    --rest-message "add active user filtering")
-  ⎿  committed: add logging
-     committed: add pagination to user listing
-     committed: add active user filtering
+        --pick a811273:4-6 8c1940f:2,5-6,34,37 \
+        -m "Add logging infrastructure" \
+        -m "Configure debug logging level and format, add request l…)
+  ⎿  committed: Add logging infrastructure
+     committed: Add active flag to users
+     committed: Add pagination support
+
+⏺ Done. Let me verify the split:
 
 ⏺ Bash(git log --oneline -5)
-  ⎿  64b55f1 add readme
-     1722eeb add active user filtering
-     e7171e3 add pagination to user listing
-     ae9b485 add logging
-     386b2fe initial app setup
+  ⎿  f5d7d3e Add readme
+     ff73e29 Add pagination support
+     d6d0a7b Add active flag to users
+     … +2 lines (ctrl+o to expand)
+
+⏺ The commit has been split into three focused commits:
+  ┌─────────┬─────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ Commit  │                                         Description                                         │
+  ├─────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 6f98f7e │ Add logging infrastructure - LOG_LEVEL, LOG_FORMAT config, logging imports and logger calls │
+  ├─────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ d6d0a7b │ Add active flag to users - active field in model/data, filtering logic                      │
+  ├─────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ ff73e29 │ Add pagination support - MAX_PAGE_SIZE config, page/per_page params, paginated response     │
+  └─────────┴─────────────────────────────────────────────────────────────────────────────────────────────┘
+
+✻ Sautéed for 35s
 ```
 
 ## Requirements

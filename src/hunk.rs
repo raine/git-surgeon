@@ -8,7 +8,12 @@ use crate::patch::{ApplyMode, apply_patch, build_patch, slice_hunk, slice_hunk_m
 
 const MAX_PREVIEW_LINES: usize = 4;
 
-pub fn list_hunks(staged: bool, file: Option<&str>, commit: Option<&str>) -> Result<()> {
+pub fn list_hunks(
+    staged: bool,
+    file: Option<&str>,
+    commit: Option<&str>,
+    full: bool,
+) -> Result<()> {
     let diff_output = match commit {
         Some(c) => crate::diff::run_git_diff_commit(c, file)?,
         None => crate::diff::run_git_diff(staged, file)?,
@@ -45,19 +50,27 @@ pub fn list_hunks(staged: bool, file: Option<&str>, commit: Option<&str>) -> Res
             id, hunk.file, func_part, additions, deletions
         );
 
-        // Preview: show up to MAX_PREVIEW_LINES changed lines
-        let changed: Vec<&String> = hunk
-            .lines
-            .iter()
-            .filter(|l| l.starts_with('+') || l.starts_with('-'))
-            .collect();
+        if full {
+            // Full mode: show all lines with line numbers (like show command)
+            let width = hunk.lines.len().to_string().len();
+            for (i, line) in hunk.lines.iter().enumerate() {
+                println!("{:>w$}:{}", i + 1, line, w = width);
+            }
+        } else {
+            // Preview mode: show up to MAX_PREVIEW_LINES changed lines
+            let changed: Vec<&String> = hunk
+                .lines
+                .iter()
+                .filter(|l| l.starts_with('+') || l.starts_with('-'))
+                .collect();
 
-        let show = changed.len().min(MAX_PREVIEW_LINES);
-        for line in &changed[..show] {
-            println!("  {}", line);
-        }
-        if changed.len() > MAX_PREVIEW_LINES {
-            println!("  ... (+{} more lines)", changed.len() - MAX_PREVIEW_LINES);
+            let show = changed.len().min(MAX_PREVIEW_LINES);
+            for line in &changed[..show] {
+                println!("  {}", line);
+            }
+            if changed.len() > MAX_PREVIEW_LINES {
+                println!("  ... (+{} more lines)", changed.len() - MAX_PREVIEW_LINES);
+            }
         }
         println!();
     }

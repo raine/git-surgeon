@@ -91,3 +91,30 @@ def test_additions_deletions_count(git_agent_exe, repo):
     result = run_git_agent(git_agent_exe, repo, "hunks")
     assert result.returncode == 0
     assert "(+1 -1)" in result.stdout
+
+
+def test_full_flag_shows_line_numbers(git_agent_exe, repo):
+    create_file(repo, "full.txt", "line1\nline2\nline3\n")
+    modify_file(repo, "full.txt", "line1\nchanged\nline3\n")
+
+    result = run_git_agent(git_agent_exe, repo, "hunks", "--full")
+    assert result.returncode == 0
+    # Should have line numbers like "1:", "2:", etc.
+    assert "1:" in result.stdout
+    # Should include context lines (not just changed lines)
+    assert "line1" in result.stdout or "line3" in result.stdout
+
+
+def test_full_flag_with_commit(git_agent_exe, repo):
+    create_file(repo, "commit.txt", "original\n")
+    run_git(repo, "add", "commit.txt")
+    run_git(repo, "commit", "-m", "add file")
+    modify_file(repo, "commit.txt", "modified\n")
+    run_git(repo, "add", "commit.txt")
+    run_git(repo, "commit", "-m", "modify file")
+
+    result = run_git_agent(git_agent_exe, repo, "hunks", "--commit=HEAD", "--full")
+    assert result.returncode == 0
+    assert "commit.txt" in result.stdout
+    # Should have line numbers
+    assert "1:" in result.stdout

@@ -24,6 +24,9 @@ git-surgeon hunks --file=src/main.rs
 # List hunks from a specific commit
 git-surgeon hunks --commit <HEAD/sha>
 
+# Show all hunks with line numbers (for small commits needing line-range splits)
+git-surgeon hunks --commit <sha> --full
+
 # Show full diff for a hunk (lines are numbered for use with --lines)
 git-surgeon show <id>
 git-surgeon show <id> --commit HEAD
@@ -109,6 +112,7 @@ git-surgeon split HEAD \
 ## Splitting commits
 
 1. List hunks in the commit: `git-surgeon hunks --commit <sha>`
+   - For small commits, use `--full` to see all lines with line numbers in one call
 2. Split by picking hunks: `git-surgeon split <sha> --pick <id1> -m "first" --rest-message "second"`
 3. Use multiple `-m` flags for subject + body: `--pick <id> -m "Subject" -m "Body paragraph"`
 4. Use `id:range` syntax for partial hunks: `--pick <id>:5-20`

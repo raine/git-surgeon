@@ -86,6 +86,9 @@ git-surgeon hunks --file src/main.rs
 # List hunks from a specific commit
 git-surgeon hunks --commit HEAD
 git-surgeon hunks --commit abc1234
+
+# Show full diff with line numbers (useful for small commits)
+git-surgeon hunks --commit abc1234 --full
 ```
 
 #### Example output

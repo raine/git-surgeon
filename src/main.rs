@@ -28,6 +28,9 @@ enum Commands {
         /// Show hunks from a specific commit
         #[arg(long)]
         commit: Option<String>,
+        /// Show full diff with line numbers (like show, but for all hunks)
+        #[arg(long)]
+        full: bool,
     },
     /// Show full diff for a specific hunk
     Show {
@@ -275,7 +278,8 @@ fn main() -> Result<()> {
             staged,
             file,
             commit,
-        } => hunk::list_hunks(staged, file.as_deref(), commit.as_deref())?,
+            full,
+        } => hunk::list_hunks(staged, file.as_deref(), commit.as_deref(), full)?,
         Commands::Show { id, commit } => hunk::show_hunk(&id, commit.as_deref())?,
         Commands::Stage { ids, lines } => hunk::apply_hunks(&ids, patch::ApplyMode::Stage, lines)?,
         Commands::Unstage { ids, lines } => {

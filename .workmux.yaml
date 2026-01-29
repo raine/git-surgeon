@@ -1,0 +1,3 @@
+files:
+  symlink:
+    - tests/venv

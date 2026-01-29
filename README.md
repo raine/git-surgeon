@@ -55,6 +55,7 @@ to stage individual hunks instead of entire files.
 - [`discard`](#discard) — Discard working tree changes for hunks
 - [`fixup`](#fixup) — Fold staged changes into an earlier commit
 - [`reword`](#reword) — Change the commit message of an existing commit
+- [`squash`](#squash) — Squash multiple commits into one
 - [`undo`](#undo) — Reverse-apply hunks from a commit
 - [`split`](#split) — Split a commit into multiple commits by hunk selection
 
@@ -221,6 +222,30 @@ git-surgeon reword abc1234 -m "corrected message"
 
 If the rebase hits a conflict, the repo is left in the conflict state for manual
 resolution (`git rebase --continue` or `git rebase --abort`).
+
+---
+
+### `squash`
+
+Combines commits from `<commit>` through HEAD into a single commit.
+
+```bash
+# Squash last 2 commits
+git-surgeon squash HEAD~1 -m "combined feature"
+
+# Squash last 3 commits with subject + body
+git-surgeon squash HEAD~2 -m "Add user auth" -m "Implements JWT-based authentication."
+
+# Squash from a specific commit
+git-surgeon squash abc1234 -m "feature complete"
+
+# Force squash even if range contains merge commits
+git-surgeon squash HEAD~3 --force -m "squash with merges"
+```
+
+The target commit must be an ancestor of HEAD. If the range contains merge
+commits, use `--force` to flatten them into the squashed commit. Uncommitted
+changes are autostashed and restored after squashing.
 
 ---
 

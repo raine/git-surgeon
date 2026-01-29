@@ -110,6 +110,17 @@ enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Squash commits from <commit>..HEAD into a single commit
+    Squash {
+        /// The oldest commit to include. All commits from here to HEAD are combined.
+        commit: String,
+        /// Commit message (required)
+        #[arg(short, long, required = true, num_args = 1)]
+        message: Vec<String>,
+        /// Force squash even if range contains merge commits (which will be flattened)
+        #[arg(long)]
+        force: bool,
+    },
     /// Install the git-surgeon skill for AI coding assistants
     InstallSkill {
         /// Install for Claude Code (~/.claude/skills/)
@@ -278,6 +289,13 @@ fn main() -> Result<()> {
         Commands::Split { commit, args } => {
             let (pick_groups, rest_message) = parse_split_args(&args)?;
             hunk::split(&commit, &pick_groups, rest_message.as_deref())?;
+        }
+        Commands::Squash {
+            commit,
+            message,
+            force,
+        } => {
+            hunk::squash(&commit, &message.join("\n\n"), force)?;
         }
         Commands::InstallSkill {
             claude,

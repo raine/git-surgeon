@@ -731,6 +731,152 @@ fn check_no_rebase_in_progress() -> Result<()> {
     Ok(())
 }
 
+/// Squash commits from <commit>..HEAD into a single commit.
+pub fn squash(commit: &str, message: &str, force: bool) -> Result<()> {
+    check_no_rebase_in_progress()?;
+
+    // Autostash if working tree is dirty (tracked files only)
+    let status = Command::new("git")
+        .args(["status", "--porcelain", "--untracked-files=no"])
+        .output()
+        .context("failed to check git status")?;
+    let needs_stash = !String::from_utf8_lossy(&status.stdout).trim().is_empty();
+
+    if needs_stash {
+        let output = Command::new("git")
+            .args(["stash", "push", "-m", "git-surgeon squash autostash"])
+            .output()
+            .context("failed to stash changes")?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "git stash failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    // Resolve target commit SHA
+    let target_sha = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", commit]))
+        .with_context(|| format!("could not resolve commit '{}'", commit))?;
+    let target_sha = target_sha.trim();
+
+    let head_sha = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", "HEAD"]))?;
+    let head_sha = head_sha.trim();
+
+    if target_sha == head_sha {
+        anyhow::bail!("nothing to squash: target commit is HEAD");
+    }
+
+    // Verify target is ancestor of HEAD
+    let is_ancestor = Command::new("git")
+        .args(["merge-base", "--is-ancestor", target_sha, "HEAD"])
+        .status()
+        .context("failed to check ancestry")?;
+    if !is_ancestor.success() {
+        anyhow::bail!(
+            "commit {} is not an ancestor of HEAD",
+            &target_sha[..7.min(target_sha.len())]
+        );
+    }
+
+    // Check for merge commits in range (they will be flattened)
+    if !force {
+        let merges = Command::new("git")
+            .args(["rev-list", "--merges", &format!("{}..HEAD", target_sha)])
+            .output()
+            .context("failed to check for merge commits")?;
+        if !String::from_utf8_lossy(&merges.stdout).trim().is_empty() {
+            anyhow::bail!(
+                "range contains merge commits which will be flattened; use --force to proceed"
+            );
+        }
+    }
+
+    // Check if target is root commit
+    let is_root = Command::new("git")
+        .args(["rev-parse", "--verify", &format!("{}^", target_sha)])
+        .output()
+        .map(|o| !o.status.success())
+        .unwrap_or(false);
+
+    if is_root {
+        // For root commit: delete HEAD ref to create orphan state, then commit
+        // This preserves hooks and GPG signing (unlike commit-tree)
+        let output = Command::new("git")
+            .args(["update-ref", "-d", "HEAD"])
+            .output()
+            .context("failed to delete HEAD ref")?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "git update-ref failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        // Commit (git treats this as the first commit)
+        let output = Command::new("git")
+            .args(["commit", "-m", message])
+            .output()
+            .context("failed to commit")?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "git commit failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    } else {
+        // Normal case: reset to parent of target
+        let output = Command::new("git")
+            .args(["reset", "--soft", &format!("{}^", target_sha)])
+            .output()
+            .context("failed to reset")?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "git reset failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        // Commit with new message
+        let output = Command::new("git")
+            .args(["commit", "-m", message])
+            .output()
+            .context("failed to commit")?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "git commit failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    // Count how many commits were squashed
+    let count = crate::diff::run_git_cmd(Command::new("git").args([
+        "rev-list",
+        "--count",
+        &format!("{}..{}", target_sha, head_sha),
+    ]))?;
+    let count: i32 = count.trim().parse().unwrap_or(0);
+
+    eprintln!("squashed {} commits", count + 1);
+
+    // Restore stashed changes
+    if needs_stash {
+        let output = Command::new("git")
+            .args(["stash", "pop"])
+            .output()
+            .context("failed to pop stash")?;
+        if !output.status.success() {
+            eprintln!(
+                "warning: stash pop failed (conflicts?), run 'git stash pop' manually: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+    }
+
+    Ok(())
+}
+
 fn start_rebase_at_commit(target_sha: &str) -> Result<()> {
     let is_root = Command::new("git")
         .args(["rev-parse", "--verify", &format!("{}^", target_sha)])

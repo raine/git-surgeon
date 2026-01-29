@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.1.4 (2026-01-29)
+
+- Add `reword` command to change commit messages non-interactively
+- Add `squash` command to combine multiple commits into one without rebase
+  conflicts
+- Add `--full` flag to `hunks` to show all lines with line numbers in one call
+- Support comma-separated line ranges in split and commit commands (e.g.,
+  `id:2,5-6,34`)
+- Preserve original author and date when squashing commits
+
 ## v0.1.3 (2026-01-29)
 
 - Add `install-skill` command to install the AI assistant skill for Claude Code,

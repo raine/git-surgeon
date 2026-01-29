@@ -77,6 +77,14 @@ enum Commands {
         /// Target commit to fold staged changes into
         commit: String,
     },
+    /// Change the commit message of an existing commit
+    Reword {
+        /// Target commit to reword
+        commit: String,
+        /// New commit message (multiple -m values are joined by blank lines)
+        #[arg(short, long, required = true, num_args = 1)]
+        message: Vec<String>,
+    },
     /// Stage hunks and commit in one step
     Commit {
         /// Hunk IDs (optionally with :START-END range suffix)
@@ -264,6 +272,7 @@ fn main() -> Result<()> {
         }
         Commands::Commit { ids, message } => hunk::commit_hunks(&ids, &message.join("\n\n"))?,
         Commands::Fixup { commit } => hunk::fixup(&commit)?,
+        Commands::Reword { commit, message } => hunk::reword(&commit, &message.join("\n\n"))?,
         Commands::Undo { ids, from, lines } => hunk::undo_hunks(&ids, &from, lines)?,
         Commands::UndoFile { files, from } => hunk::undo_files(&files, &from)?,
         Commands::Split { commit, args } => {

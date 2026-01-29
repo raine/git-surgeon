@@ -51,6 +51,11 @@ git-surgeon discard <id> --lines 5-30
 # Fixup an earlier commit with currently staged changes
 git-surgeon fixup <commit>
 
+# Change commit message
+git-surgeon reword HEAD -m "new message"
+git-surgeon reword <commit> -m "new message"
+git-surgeon reword HEAD -m "subject" -m "body"
+
 # Undo specific hunks from a commit (reverse-apply to working tree)
 git-surgeon undo <id1> <id2> ... --from <commit>
 git-surgeon undo <id> --from <commit> --lines 2-10

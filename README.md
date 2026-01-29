@@ -54,6 +54,7 @@ to stage individual hunks instead of entire files.
 - [`unstage`](#unstage) — Unstage hunks by ID
 - [`discard`](#discard) — Discard working tree changes for hunks
 - [`fixup`](#fixup) — Fold staged changes into an earlier commit
+- [`reword`](#reword) — Change the commit message of an existing commit
 - [`undo`](#undo) — Reverse-apply hunks from a commit
 - [`split`](#split) — Split a commit into multiple commits by hunk selection
 
@@ -198,6 +199,24 @@ git-surgeon fixup abc1234
 
 # Fixup HEAD (equivalent to git commit --amend --no-edit)
 git-surgeon fixup HEAD
+```
+
+If the rebase hits a conflict, the repo is left in the conflict state for manual
+resolution (`git rebase --continue` or `git rebase --abort`).
+
+---
+
+### `reword`
+
+Changes the commit message of an existing commit without modifying its content.
+Uses `git commit --amend` for HEAD, or an autosquash rebase for older commits.
+
+```bash
+# With subject + body
+git-surgeon reword HEAD -m "subject" -m "body paragraph"
+
+# Change an earlier commit's message
+git-surgeon reword abc1234 -m "corrected message"
 ```
 
 If the rebase hits a conflict, the repo is left in the conflict state for manual

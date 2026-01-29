@@ -397,6 +397,115 @@ pub fn fixup(commit: &str) -> Result<()> {
     Ok(())
 }
 
+/// Change the commit message of an existing commit.
+pub fn reword(commit: &str, message: &str) -> Result<()> {
+    // Check no rebase/cherry-pick in progress
+    check_no_rebase_in_progress()?;
+
+    // Resolve the target commit SHA
+    let target_sha = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", commit]))?;
+    let target_sha = target_sha.trim();
+
+    let head_sha = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", "HEAD"]))?;
+    let head_sha = head_sha.trim();
+
+    // Track distance from target to HEAD for later (used to find new SHA after rebase)
+    let distance = crate::diff::run_git_cmd(Command::new("git").args([
+        "rev-list",
+        "--count",
+        &format!("{}..HEAD", target_sha),
+    ]))?;
+    let distance: usize = distance.trim().parse().unwrap_or(0);
+
+    if target_sha == head_sha {
+        // Simple case: amend HEAD with new message
+        let output = Command::new("git")
+            .args(["commit", "--amend", "-m", message])
+            .output()
+            .context("failed to amend HEAD")?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "git commit --amend failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    } else {
+        // Get original commit subject for reword marker
+        let subject = crate::diff::run_git_cmd(Command::new("git").args([
+            "log",
+            "-1",
+            "--format=%s",
+            target_sha,
+        ]))?;
+        let subject = subject.trim();
+
+        // Create empty reword commit with new message
+        let output = Command::new("git")
+            .args([
+                "commit",
+                "--allow-empty",
+                "-m",
+                &format!("amend! {}\n\n{}", subject, message),
+            ])
+            .output()
+            .context("failed to create reword commit")?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "git commit failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        // Check if target is root commit (has no parent)
+        let is_root = Command::new("git")
+            .args(["rev-parse", "--verify", &format!("{}^", target_sha)])
+            .output()
+            .map(|o| !o.status.success())
+            .unwrap_or(false);
+
+        // Non-interactive autosquash rebase
+        let mut rebase_cmd = Command::new("git");
+        rebase_cmd.args(["rebase", "-i", "--autosquash", "--autostash"]);
+        if is_root {
+            rebase_cmd.arg("--root");
+        } else {
+            rebase_cmd.arg(format!("{}~1", target_sha));
+        }
+        rebase_cmd.env("GIT_SEQUENCE_EDITOR", "true");
+
+        let output = rebase_cmd.output().context("failed to run rebase")?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!(
+                "error: rebase conflict while rewording {}",
+                &target_sha[..7.min(target_sha.len())]
+            );
+            eprintln!("resolve conflicts and run: git rebase --continue");
+            eprintln!("or abort with: git rebase --abort");
+            anyhow::bail!("rebase failed: {}", stderr);
+        }
+    }
+
+    // Print short sha + new subject of the reworded commit
+    // Use HEAD~distance to find the commit at the same position after rebase
+    let ref_spec = if distance == 0 {
+        "HEAD".to_string()
+    } else {
+        format!("HEAD~{}", distance)
+    };
+    let info = crate::diff::run_git_cmd(Command::new("git").args([
+        "log",
+        "-1",
+        "--format=%h %s",
+        &ref_spec,
+    ]));
+    if let Ok(info) = info {
+        eprintln!("reworded {}", info.trim());
+    }
+
+    Ok(())
+}
+
 /// Split a commit into multiple commits by hunk selection.
 pub fn split(
     commit: &str,

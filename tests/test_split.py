@@ -723,6 +723,122 @@ def test_split_with_message_body(git_agent_exe, repo):
     assert "Remaining\n\nRest body" in log.stdout
 
 
+def test_split_multi_hunks_multi_picks_with_line_ranges(git_agent_exe, repo):
+    """Split multiple hunks from different files across multiple --pick groups.
+
+    This tests that line ranges remain stable across pick groups by using
+    stateful tracking of original hunks rather than re-reading the diff.
+    """
+    # Create initial files
+    create_file(
+        repo,
+        "config.py",
+        'DATABASE = "sqlite:///app.db"\n'
+        'SECRET = "dev"\n'
+        'DEBUG = True\n'
+        'LOG_LEVEL = "INFO"\n',
+    )
+    create_file(
+        repo,
+        "server.py",
+        "from flask import Flask, jsonify\n"
+        "app = Flask(__name__)\n"
+        "users = [\n"
+        '    {"id": 1, "name": "Alice"},\n'
+        '    {"id": 2, "name": "Bob"},\n'
+        "]\n"
+        "\n"
+        "@app.route('/users')\n"
+        "def list_users():\n"
+        "    return jsonify(users)\n"
+        "\n"
+        "@app.route('/health')\n"
+        "def health():\n"
+        '    return jsonify({"status": "ok"})\n',
+    )
+
+    # Modify both files: add logging config + logging code, add pagination
+    modify_file(
+        repo,
+        "config.py",
+        'DATABASE = "sqlite:///app.db"\n'
+        'SECRET = "dev"\n'
+        'DEBUG = True\n'
+        'LOG_LEVEL = "DEBUG"\n'  # logging concern
+        'LOG_FORMAT = "%(asctime)s"\n'  # logging concern
+        'MAX_PAGE_SIZE = 100\n',  # pagination concern
+    )
+    modify_file(
+        repo,
+        "server.py",
+        "from flask import Flask, jsonify, request\n"
+        "import logging\n"  # logging concern
+        "app = Flask(__name__)\n"
+        "logger = logging.getLogger(__name__)\n"  # logging concern
+        "users = [\n"
+        '    {"id": 1, "name": "Alice"},\n'
+        '    {"id": 2, "name": "Bob"},\n'
+        "]\n"
+        "\n"
+        "@app.route('/users')\n"
+        "def list_users():\n"
+        '    page = request.args.get("page", 1, type=int)\n'  # pagination
+        "    return jsonify(users[page:page+10])\n"  # pagination
+        "\n"
+        "@app.route('/health')\n"
+        "def health():\n"
+        '    logger.info("health check")\n'  # logging concern
+        '    return jsonify({"status": "ok"})\n',
+    )
+    run_git(repo, "add", ".")
+    run_git(repo, "commit", "-m", "add logging and pagination")
+
+    # Get hunk IDs and show full output for debugging
+    result = run_git_agent(git_agent_exe, repo, "hunks", "--commit", "HEAD", "--full")
+    assert result.returncode == 0
+
+    # Identify hunks by file
+    config_id = None
+    server_ids = []
+    for line in result.stdout.strip().split("\n"):
+        if line and not line.startswith(" ") and ":" not in line[:3]:
+            parts = line.split()
+            if len(parts) >= 2:
+                hunk_id = parts[0]
+                if "config.py" in line:
+                    config_id = hunk_id
+                elif "server.py" in line:
+                    server_ids.append(hunk_id)
+    assert config_id, f"Could not find config.py hunk: {result.stdout}"
+    assert len(server_ids) >= 1, f"Could not find server.py hunks: {result.stdout}"
+
+    # For simplicity, pick whole hunks for first group, then line ranges for second
+    # This tests the core issue: after first pick commits, second pick fails
+    # because the original hunk IDs are no longer valid
+    result = run_git_agent(
+        git_agent_exe,
+        repo,
+        "split",
+        "HEAD",
+        "--pick",
+        f"{config_id}:4-6",  # logging config: LOG_LEVEL and LOG_FORMAT
+        server_ids[0],  # first server.py hunk (imports/logger)
+        "--message",
+        "add logging",
+        "--pick",
+        f"{config_id}:7",  # MAX_PAGE_SIZE
+        "--message",
+        "add pagination config",
+        "--rest-message",
+        "add pagination code",
+    )
+    assert result.returncode == 0, f"split failed: {result.stderr}"
+
+    subjects = _commit_subjects(repo)
+    assert "add logging" in subjects
+    assert "add pagination config" in subjects
+
+
 def test_split_pick_after_rest_message_fails(git_agent_exe, repo):
     """Error when --pick appears after --rest-message."""
     content = "top\n" + "ctx\n" * 20 + "bottom\n"

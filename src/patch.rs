@@ -106,6 +106,93 @@ fn parse_hunk_starts(header: &str) -> Result<(usize, usize)> {
     Ok((old_start, new_start))
 }
 
+/// Slice a hunk using picked/selected state masks (for split command).
+///
+/// This builds a patch that correctly accounts for previously picked lines:
+/// - '+' lines: selected -> keep, already picked -> context, else drop
+/// - '-' lines: selected -> keep, already picked -> drop, else context
+/// - context: always keep
+///
+/// Both `picked` and `selected` are masks over hunk.lines (same length).
+pub fn slice_hunk_with_state(
+    hunk: &DiffHunk,
+    picked: &[bool],
+    selected: &[bool],
+) -> Result<DiffHunk> {
+    if picked.len() != hunk.lines.len() || selected.len() != hunk.lines.len() {
+        anyhow::bail!(
+            "state mask length mismatch: hunk has {} lines, picked {}, selected {}",
+            hunk.lines.len(),
+            picked.len(),
+            selected.len()
+        );
+    }
+
+    let mut new_lines = Vec::new();
+    for (i, line) in hunk.lines.iter().enumerate() {
+        let already_picked = picked[i];
+        let want = selected[i];
+
+        if let Some(rest) = line.strip_prefix('+') {
+            if want {
+                // Selected: include as addition
+                new_lines.push(line.clone());
+            } else if already_picked {
+                // Previously picked: now exists in index, becomes context
+                new_lines.push(format!(" {}", rest));
+            }
+            // else: not picked yet, not selected -> drop (doesn't exist in index)
+        } else if let Some(rest) = line.strip_prefix('-') {
+            if want {
+                // Selected: include as deletion
+                new_lines.push(line.clone());
+            } else if !already_picked {
+                // Not picked yet: line still exists in index, becomes context
+                new_lines.push(format!(" {}", rest));
+            }
+            // else: already picked (removed) -> drop (line no longer in index)
+        } else {
+            // Context line: always keep
+            new_lines.push(line.clone());
+        }
+    }
+
+    let old_count = new_lines
+        .iter()
+        .filter(|l| l.starts_with('-') || l.starts_with(' '))
+        .count();
+    let new_count = new_lines
+        .iter()
+        .filter(|l| l.starts_with('+') || l.starts_with(' '))
+        .count();
+
+    let (old_start, new_start) = parse_hunk_starts(&hunk.header)?;
+
+    let func_ctx = hunk
+        .header
+        .find("@@ ")
+        .and_then(|s| {
+            let rest = &hunk.header[s + 3..];
+            rest.find("@@").map(|e| &rest[e + 2..])
+        })
+        .unwrap_or("");
+
+    let new_header = format!(
+        "@@ -{},{} +{},{} @@{}",
+        old_start, old_count, new_start, new_count, func_ctx
+    );
+
+    Ok(DiffHunk {
+        file: hunk.file.clone(),
+        old_file: hunk.old_file.clone(),
+        new_file: hunk.new_file.clone(),
+        file_header: hunk.file_header.clone(),
+        header: new_header,
+        lines: new_lines,
+        unsupported_metadata: hunk.unsupported_metadata.clone(),
+    })
+}
+
 /// Reconstruct a minimal unified diff patch for a single hunk.
 pub fn build_patch(hunk: &DiffHunk) -> String {
     let mut patch = String::new();

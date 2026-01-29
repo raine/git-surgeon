@@ -4,7 +4,9 @@ use std::process::Command;
 
 use crate::diff::DiffHunk;
 use crate::hunk_id::assign_ids;
-use crate::patch::{ApplyMode, apply_patch, build_patch, slice_hunk, slice_hunk_multi};
+use crate::patch::{
+    ApplyMode, apply_patch, build_patch, slice_hunk, slice_hunk_multi, slice_hunk_with_state,
+};
 
 const MAX_PREVIEW_LINES: usize = 4;
 
@@ -584,11 +586,55 @@ pub fn split(
         None => original_message,
     };
 
-    // Collect all picked IDs to determine "rest"
-    let mut all_picked: HashSet<String> = HashSet::new();
+    // Build stateful hunk tracking: original hunks with picked state
+    // This keeps line ranges stable (always relative to original commit)
+    struct HunkState {
+        hunk: DiffHunk,
+        picked: Vec<bool>, // which lines have been picked in previous groups
+    }
+
+    let mut hunk_states: HashMap<String, HunkState> = identified
+        .iter()
+        .map(|(id, hunk)| {
+            (
+                id.clone(),
+                HunkState {
+                    hunk: (*hunk).clone(),
+                    picked: vec![false; hunk.lines.len()],
+                },
+            )
+        })
+        .collect();
+
+    // Pre-validate all line ranges before modifying git state
     for group in pick_groups {
-        for (id, _) in &group.ids {
-            all_picked.insert(id.clone());
+        // Group line ranges by hunk ID
+        let mut hunk_ranges: HashMap<String, Vec<(usize, usize)>> = HashMap::new();
+        for (id, lines_range) in &group.ids {
+            if let Some(range) = lines_range {
+                hunk_ranges.entry(id.clone()).or_default().push(*range);
+            }
+        }
+
+        for (id, ranges) in &hunk_ranges {
+            let state = hunk_states
+                .get(id)
+                .ok_or_else(|| anyhow::anyhow!("hunk {} not found", id))?;
+
+            for (start, end) in ranges {
+                if *start == 0 || *end == 0 {
+                    anyhow::bail!("line ranges are 1-based, got {}:{}-{}", id, start, end);
+                }
+                if *end > state.hunk.lines.len() {
+                    anyhow::bail!(
+                        "line range {}:{}-{} exceeds hunk length ({})",
+                        id,
+                        start,
+                        end,
+                        state.hunk.lines.len()
+                    );
+                }
+            }
         }
     }
 
@@ -608,23 +654,10 @@ pub fn split(
         }
     }
 
-    // Now changes are in the working tree. Stage and commit each pick group.
-
-    // Map original ID -> file for fallback when hunk ID changes after partial apply
-    let initial_diff = crate::diff::run_git_diff(false, None)?;
-    let initial_hunks = crate::diff::parse_diff(&initial_diff);
-    let initial_identified = assign_ids(&initial_hunks);
-    let id_to_file: HashMap<String, String> = initial_identified
-        .iter()
-        .map(|(id, hunk)| (id.clone(), hunk.file.clone()))
-        .collect();
+    // Now changes are in the working tree. Stage and commit each pick group
+    // using the stateful approach (line ranges always relative to original commit).
 
     for group in pick_groups {
-        // Re-read current diff for fresh context that matches the index
-        let diff_output = crate::diff::run_git_diff(false, None)?;
-        let current_hunks = crate::diff::parse_diff(&diff_output);
-        let current_identified = assign_ids(&current_hunks);
-
         let mut combined_patch = String::new();
 
         // Group line ranges by hunk ID so same-hunk entries produce one patch
@@ -644,26 +677,64 @@ pub fn split(
         }
 
         for (id, ranges) in &hunk_ranges {
-            // Find hunk by ID to handle multiple hunks in the same file correctly.
-            // Fall back to file match for line-range scenarios where the hunk ID
-            // changes after partial apply.
-            let hunk = current_identified
-                .iter()
-                .find(|(hunk_id, _)| hunk_id == id)
-                .map(|(_, h)| *h)
-                .or_else(|| {
-                    id_to_file
-                        .get(id)
-                        .and_then(|file| current_hunks.iter().find(|h| &h.file == file))
-                })
-                .ok_or_else(|| anyhow::anyhow!("hunk {} not found in unstaged changes", id))?;
+            let state = hunk_states
+                .get_mut(id)
+                .ok_or_else(|| anyhow::anyhow!("hunk {} not found", id))?;
 
-            let patched_hunk = if ranges.is_empty() {
-                hunk.clone()
+            // Build selection mask for this group
+            let mut selected = vec![false; state.hunk.lines.len()];
+
+            if ranges.is_empty() {
+                // No line ranges: select all remaining change lines
+                for (i, line) in state.hunk.lines.iter().enumerate() {
+                    if (line.starts_with('+') || line.starts_with('-')) && !state.picked[i] {
+                        selected[i] = true;
+                    }
+                }
             } else {
-                slice_hunk_multi(hunk, ranges, false)?
-            };
+                // Select lines in specified ranges
+                for (start, end) in ranges {
+                    #[allow(clippy::needless_range_loop)]
+                    for i in (*start - 1)..*end {
+                        if i < state.hunk.lines.len() {
+                            let line = &state.hunk.lines[i];
+                            // Only select change lines, not context
+                            if line.starts_with('+') || line.starts_with('-') {
+                                if state.picked[i] {
+                                    anyhow::bail!(
+                                        "line {} in hunk {} was already picked in a previous group",
+                                        i + 1,
+                                        id
+                                    );
+                                }
+                                selected[i] = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Check we're actually selecting something
+            let has_changes = selected.iter().any(|&s| s);
+            if !has_changes {
+                // Skip this hunk if nothing to select
+                continue;
+            }
+
+            // Build patch using stateful slicing
+            let patched_hunk = slice_hunk_with_state(&state.hunk, &state.picked, &selected)?;
             combined_patch.push_str(&build_patch(&patched_hunk));
+
+            // Mark selected lines as picked for next groups
+            for (i, sel) in selected.iter().enumerate() {
+                if *sel {
+                    state.picked[i] = true;
+                }
+            }
+        }
+
+        if combined_patch.is_empty() {
+            anyhow::bail!("no changes selected for commit");
         }
 
         apply_patch(&combined_patch, &ApplyMode::Stage)?;
@@ -687,13 +758,36 @@ pub fn split(
     }
 
     // Stage and commit remaining changes (if any)
-    let remaining_diff = crate::diff::run_git_diff(false, None)?;
-    if !remaining_diff.trim().is_empty() {
-        let remaining_hunks = crate::diff::parse_diff(&remaining_diff);
-        let mut combined_patch = String::new();
-        for hunk in &remaining_hunks {
-            combined_patch.push_str(&build_patch(hunk));
+    // Build patches for all unpicked change lines
+    let mut has_remaining = false;
+    let mut combined_patch = String::new();
+
+    for (id, state) in &hunk_states {
+        // Check if any change lines remain unpicked
+        let mut remaining_selected = vec![false; state.hunk.lines.len()];
+        for (i, line) in state.hunk.lines.iter().enumerate() {
+            if (line.starts_with('+') || line.starts_with('-')) && !state.picked[i] {
+                remaining_selected[i] = true;
+                has_remaining = true;
+            }
         }
+
+        if remaining_selected.iter().any(|&s| s) {
+            let patched_hunk =
+                slice_hunk_with_state(&state.hunk, &state.picked, &remaining_selected)?;
+            combined_patch.push_str(&build_patch(&patched_hunk));
+
+            // Mark as picked (for consistency, though we're done)
+            for (i, sel) in remaining_selected.iter().enumerate() {
+                if *sel {
+                    // We'd update state.picked here but we're borrowing immutably
+                    let _ = (id, sel, i); // suppress unused warnings
+                }
+            }
+        }
+    }
+
+    if has_remaining {
         apply_patch(&combined_patch, &ApplyMode::Stage)?;
 
         let output = Command::new("git")

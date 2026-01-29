@@ -151,30 +151,39 @@ pub fn apply_hunks(ids: &[String], mode: ApplyMode, lines: Option<(usize, usize)
     Ok(())
 }
 
-/// Parse an ID that may contain an inline range suffix (e.g. "a1b2c3d:1-11" or "a1b2c3d:5").
-/// Returns (id, optional line range).
-fn parse_id_range(raw: &str) -> Result<(&str, Option<(usize, usize)>)> {
-    if let Some((id, range)) = raw.split_once(':') {
-        let (start, end) = if let Some((a, b)) = range.split_once('-') {
-            let start: usize = a
-                .parse()
-                .map_err(|_| anyhow::anyhow!("invalid start number in '{}'", raw))?;
-            let end: usize = b
-                .parse()
-                .map_err(|_| anyhow::anyhow!("invalid end number in '{}'", raw))?;
-            (start, end)
-        } else {
-            let n: usize = range
-                .parse()
-                .map_err(|_| anyhow::anyhow!("invalid line number in '{}'", raw))?;
-            (n, n)
-        };
-        if start == 0 || end == 0 || start > end {
-            anyhow::bail!("range must be 1-based and start <= end in '{}'", raw);
+/// Parse an ID that may contain inline range suffixes.
+/// Supports: "id", "id:5", "id:1-11", "id:2,5-6,34" (comma-separated).
+/// Returns (id, vector of ranges). Empty vector means "whole hunk".
+fn parse_id_range(raw: &str) -> Result<(&str, Vec<(usize, usize)>)> {
+    if let Some((id, range_str)) = raw.split_once(':') {
+        let mut ranges = Vec::new();
+        for part in range_str.split(',') {
+            let part = part.trim();
+            if part.is_empty() {
+                continue;
+            }
+            let (start, end) = if let Some((a, b)) = part.split_once('-') {
+                let start: usize = a
+                    .parse()
+                    .map_err(|_| anyhow::anyhow!("invalid start number in '{}'", raw))?;
+                let end: usize = b
+                    .parse()
+                    .map_err(|_| anyhow::anyhow!("invalid end number in '{}'", raw))?;
+                (start, end)
+            } else {
+                let n: usize = part
+                    .parse()
+                    .map_err(|_| anyhow::anyhow!("invalid line number in '{}'", raw))?;
+                (n, n)
+            };
+            if start == 0 || end == 0 || start > end {
+                anyhow::bail!("range must be 1-based and start <= end in '{}'", raw);
+            }
+            ranges.push((start, end));
         }
-        Ok((id, Some((start, end))))
+        Ok((id, ranges))
     } else {
-        Ok((raw, None))
+        Ok((raw, Vec::new()))
     }
 }
 
@@ -196,16 +205,10 @@ pub fn commit_hunks(ids: &[String], message: &str) -> Result<()> {
     // Build patch from all requested hunks, grouping ranges by hunk ID
     let mut hunk_ranges: Vec<(String, Vec<(usize, usize)>)> = Vec::new();
     for raw_id in ids {
-        let (id, lines) = parse_id_range(raw_id)?;
+        let (id, ranges) = parse_id_range(raw_id)?;
         if let Some(entry) = hunk_ranges.iter_mut().find(|(eid, _)| eid == id) {
-            if let Some(range) = lines {
-                entry.1.push(range);
-            }
+            entry.1.extend(ranges);
         } else {
-            let ranges = match lines {
-                Some(range) => vec![range],
-                None => vec![],
-            };
             hunk_ranges.push((id.to_string(), ranges));
         }
     }

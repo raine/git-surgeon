@@ -195,7 +195,7 @@ fn parse_split_args(args: &[String]) -> anyhow::Result<(Vec<PickGroup>, Option<V
             // Collect IDs until we hit a flag
             while i < args.len() && !args[i].starts_with('-') {
                 let parsed = parse_pick_id(&args[i])?;
-                current_ids.push(parsed);
+                current_ids.extend(parsed);
                 i += 1;
             }
             if current_ids.is_empty() {
@@ -246,12 +246,28 @@ fn parse_split_args(args: &[String]) -> anyhow::Result<(Vec<PickGroup>, Option<V
     Ok((groups, rest_message))
 }
 
-fn parse_pick_id(s: &str) -> anyhow::Result<(String, Option<(usize, usize)>)> {
-    if let Some((id, range)) = s.split_once(':') {
-        let range = parse_line_range(range).map_err(|e| anyhow::anyhow!(e))?;
-        Ok((id.to_string(), Some(range)))
+///// Parse a pick ID that may have comma-separated ranges (e.g., "id:2,5-6,34").
+/// Returns a list of (id, optional range) tuples - one per range, or one with None if no ranges.
+#[allow(clippy::type_complexity)]
+fn parse_pick_id(s: &str) -> anyhow::Result<Vec<(String, Option<(usize, usize)>)>> {
+    if let Some((id, range_str)) = s.split_once(':') {
+        let mut results = Vec::new();
+        for part in range_str.split(',') {
+            let part = part.trim();
+            if part.is_empty() {
+                continue;
+            }
+            let range = parse_line_range(part).map_err(|e| anyhow::anyhow!(e))?;
+            results.push((id.to_string(), Some(range)));
+        }
+        if results.is_empty() {
+            // Edge case: "id:" with nothing after
+            Ok(vec![(id.to_string(), None)])
+        } else {
+            Ok(results)
+        }
     } else {
-        Ok((s.to_string(), None))
+        Ok(vec![(s.to_string(), None)])
     }
 }
 

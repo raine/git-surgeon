@@ -477,6 +477,78 @@ def test_split_same_hunk_multiple_ranges(git_agent_exe, repo):
     assert "alpha and beta changes" in subjects
 
 
+def test_split_comma_separated_ranges(git_agent_exe, repo):
+    """Split with comma-separated ranges in a single ID argument."""
+    lines = ["line{}\n".format(i) for i in range(1, 11)]
+    create_file(repo, "f.txt", "".join(lines))
+
+    new_lines = list(lines)
+    new_lines[1] = "line2 ALPHA\n"
+    new_lines[3] = "line4 ALPHA\n"
+    new_lines[7] = "line8 BETA\n"
+    new_lines[9] = "line10 BETA\n"
+    modify_file(repo, "f.txt", "".join(new_lines))
+    run_git(repo, "add", "f.txt")
+    run_git(repo, "commit", "-m", "modify top and bottom")
+
+    ids = _get_hunk_ids(git_agent_exe, repo, "--commit", "HEAD")
+    assert len(ids) == 1
+    hunk_id = ids[0]
+
+    # Comma-separated ranges: "id:2-5,9-12" instead of "id:2-5 id:9-12"
+    result = run_git_agent(
+        git_agent_exe,
+        repo,
+        "split",
+        "HEAD",
+        "--pick",
+        f"{hunk_id}:2-5,9-12",
+        "--message",
+        "alpha and beta changes",
+    )
+    assert result.returncode == 0, f"split failed: {result.stderr}"
+
+    subjects = _commit_subjects(repo)
+    assert "alpha and beta changes" in subjects
+
+
+def test_split_comma_with_single_lines(git_agent_exe, repo):
+    """Split with comma-separated single lines and ranges mixed."""
+    lines = ["line{}\n".format(i) for i in range(1, 11)]
+    create_file(repo, "f.txt", "".join(lines))
+
+    new_lines = list(lines)
+    new_lines[1] = "line2 CHANGED\n"
+    new_lines[3] = "line4 CHANGED\n"
+    new_lines[5] = "line6 CHANGED\n"
+    modify_file(repo, "f.txt", "".join(new_lines))
+    run_git(repo, "add", "f.txt")
+    run_git(repo, "commit", "-m", "modify three lines")
+
+    ids = _get_hunk_ids(git_agent_exe, repo, "--commit", "HEAD")
+    assert len(ids) == 1
+    hunk_id = ids[0]
+
+    # Mix of single lines and ranges: "id:2,4,6" (all single lines)
+    result = run_git_agent(
+        git_agent_exe,
+        repo,
+        "split",
+        "HEAD",
+        "--pick",
+        f"{hunk_id}:2,4",
+        "--message",
+        "first two changes",
+        "--rest-message",
+        "third change",
+    )
+    assert result.returncode == 0, f"split failed: {result.stderr}"
+
+    subjects = _commit_subjects(repo)
+    assert "first two changes" in subjects
+    assert "third change" in subjects
+
+
 def test_split_multi_pick_groups_with_line_ranges(git_agent_exe, repo):
     """Split one hunk across multiple --pick groups using line ranges.
 

@@ -302,9 +302,9 @@ git-surgeon split HEAD \
   --rest-message "Other changes" --rest-message "Body paragraph."
 
 # With line ranges (id:range inline syntax)
-# Repeat same ID for non-contiguous ranges
+# Use commas for non-contiguous ranges
 git-surgeon split abc1234 \
-  --pick a1b2c3d:1-11 a1b2c3d:20-30 e4f5678 \
+  --pick a1b2c3d:1-11,20-30 e4f5678 \
   -m "add pagination"
 
 # Multiple splits (more than two commits)

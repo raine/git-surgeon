@@ -5,6 +5,44 @@ interactive prompts. Stage, unstage, or discard individual hunks. Commit hunks
 directly with line-range precision. Restructure history by splitting commits or
 folding fixes into earlier ones.
 
+## Why?
+
+AI agents can't use interactive git commands like `git add -p`. When asked to
+commit changes separately, they resort to destructive workarounds:
+
+```
+❯ commit the changes separately
+
+⏺ Bash(git diff internal/bot/listing_handler.go)
+  ⎿  diff --git i/internal/bot/listing_handler.go ...
+     ... +83 lines
+
+⏺ Let me reset and make the changes in two separate commits.
+
+⏺ Bash(git checkout internal/bot/listing_handler.go)   ← about to destroy changes
+  ⎿  Interrupted
+```
+
+With git-surgeon, the agent can inspect hunks and commit them selectively:
+
+```
+❯ commit the changes separately
+
+⏺ I'll commit these as separate changes using git-surgeon.
+
+⏺ Skill(git-surgeon)
+  ⎿  Successfully loaded skill
+
+⏺ Bash(git-surgeon hunks)
+  ⎿  ac34353 internal/bot/listing_handler.go (+6 -3)
+     15baf94 internal/bot/listing_handler.go (+10 -2)
+     ...
+
+⏺ Bash(git-surgeon commit ac34353 15baf94 7c6ef9e -m "allow edit commands during attribute input")
+
+⏺ Bash(git-surgeon commit 4eefac8 bbba931 -m "add logging for attribute prompts")
+```
+
 **Highlights**
 
 - Stage specific lines from a hunk, not just whole hunks

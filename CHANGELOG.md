@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.5 (2026-01-31)
+
+- Improve skill trigger keywords so AI assistants recognize requests to "commit
+  changes separately" or "make separate commits"
+
 ## v0.1.4 (2026-01-29)
 
 - Add `reword` command to change commit messages non-interactively

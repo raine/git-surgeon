@@ -524,3 +524,10 @@ to examine line numbers, then `split` with line ranges to separate concerns:
 
 - Git 2.0+
 - Rust (for building from source)
+
+## Related projects
+
+- [workmux](https://github.com/raine/workmux) — Git worktrees + tmux windows for
+  parallel AI agent workflows
+- [claude-history](https://github.com/raine/claude-history) — Search and view
+  Claude Code conversation history with fzf

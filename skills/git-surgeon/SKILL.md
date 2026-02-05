@@ -1,6 +1,6 @@
 ---
 name: git-surgeon
-description: Non-interactive hunk-level git staging, unstaging, discarding, undoing, fixup, and commit splitting. Use when selectively staging, unstaging, discarding, reverting, or splitting individual diff hunks by ID instead of interactively. Also use when asked to commit changes separately, make separate commits, or split changes into multiple commits.
+description: Non-interactive hunk-level git staging, unstaging, discarding, undoing, fixup, squash, and commit splitting. Use when selectively staging, unstaging, discarding, reverting, squashing, or splitting individual diff hunks by ID instead of interactively.
 ---
 
 # git-surgeon
@@ -59,6 +59,13 @@ git-surgeon reword HEAD -m "new message"
 git-surgeon reword <commit> -m "new message"
 git-surgeon reword HEAD -m "subject" -m "body"
 
+# Squash multiple commits into one
+git-surgeon squash HEAD~1 -m "combined feature"
+git-surgeon squash HEAD~2 -m "Add user auth" -m "Implements JWT-based authentication."
+git-surgeon squash <commit> -m "feature complete"
+git-surgeon squash HEAD~3 --force -m "squash with merges"
+git-surgeon squash HEAD~1 --no-preserve-author -m "use current author"
+
 # Undo specific hunks from a commit (reverse-apply to working tree)
 git-surgeon undo <id1> <id2> ... --from <commit>
 git-surgeon undo <id> --from <commit> --lines 2-10
@@ -101,6 +108,15 @@ git-surgeon split HEAD \
 2. Fixup the target commit: `git-surgeon fixup <commit-sha>`
 3. For HEAD, this amends directly; for older commits, it uses autosquash rebase
 4. Unstaged changes are preserved automatically
+
+## Squashing commits
+
+1. Squash commits from a target commit through HEAD: `git-surgeon squash HEAD~2 -m "combined"`
+2. Use multiple `-m` flags for subject + body: `git-surgeon squash HEAD~1 -m "Subject" -m "Body paragraph"`
+3. Target commit must be an ancestor of HEAD
+4. Use `--force` to squash ranges containing merge commits
+5. Uncommitted changes are autostashed and restored
+6. Author from the oldest commit is preserved by default; use `--no-preserve-author` for current user
 
 ## Undoing changes from commits
 

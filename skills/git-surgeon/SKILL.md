@@ -109,6 +109,12 @@ git-surgeon split HEAD \
 3. For HEAD, this amends directly; for older commits, it uses autosquash rebase
 4. Unstaged changes are preserved automatically
 
+If you already created a fixup commit, uncommit it first:
+```bash
+git reset --soft HEAD~1
+git-surgeon fixup HEAD
+```
+
 ## Squashing commits
 
 1. Squash commits from a target commit through HEAD: `git-surgeon squash HEAD~2 -m "combined"`

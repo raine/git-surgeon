@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.6 (2026-02-05)
+
+- Improve documentation for `squash` and `fixup` commands
+
 ## v0.1.5 (2026-01-31)
 
 - Improve skill trigger keywords so AI assistants recognize requests to "commit

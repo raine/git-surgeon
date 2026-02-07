@@ -49,6 +49,8 @@ With git-surgeon, the agent can inspect hunks and commit them selectively:
   ([example](#example-splitting-a-hunk-across-commits))
 - Split commits that mix concerns into focused commits
   ([example](#example-splitting-a-commit-that-mixes-concerns))
+- Retroactively split a combined commit into separate changes
+  ([example](#example-splitting-a-commit-retroactively))
 
 ## Quick start
 
@@ -518,6 +520,43 @@ to examine line numbers, then `split` with line ranges to separate concerns:
   └─────────┴─────────────────────────────────────────────────────────────────────────────────────────────┘
 
 ✻ Sautéed for 35s
+```
+
+## Example: splitting a commit retroactively
+
+An agent commits two unrelated changes together. The user asks to separate them
+after the fact using `split`:
+
+```
+⏺ Bash(git add instance.rs mounts.rs && git commit -m "mount credentials to guest home and show mounts on VM creation")
+  ⎿  [sandbox ddef0f1] mount credentials to guest home and show mounts on VM creation
+      2 files changed, 30 insertions(+), 3 deletions(-)
+
+⏺ Committed ddef0f1 on sandbox. Two changes:
+  - Fixed credential mount to target guest home instead of host path
+  - Added mount point output when creating a new VM
+
+❯ commit them separately
+
+⏺ Skill(git-surgeon)
+  ⎿  Successfully loaded skill
+
+⏺ Bash(git-surgeon hunks --commit HEAD)
+  ⎿  2fc287e instance.rs fn ensure_vm_running (+15 -0)
+       +            eprintln!("  Mounts:");
+     … +13 more lines
+     53c287a mounts.rs fn get_mounts (+3 -3)
+       -    mount_path: host_home.join(".claude"),
+       +    mount_path: PathBuf::from("/home/user.linux/.claude"),
+     bdbda13 instance.rs fn create_vm (+12 -0)
+       +    for mount in &mounts {
+     … +10 more lines
+
+⏺ Bash(git-surgeon split HEAD \
+        --pick 53c287a bdbda13 -m "mount credentials to guest home directory" \
+        --rest-message "show mount points when creating a new VM")
+  ⎿  committed: mount credentials to guest home directory
+     committed: show mount points when creating a new VM
 ```
 
 ## Requirements

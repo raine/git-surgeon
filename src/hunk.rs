@@ -15,6 +15,7 @@ pub fn list_hunks(
     file: Option<&str>,
     commit: Option<&str>,
     full: bool,
+    blame: bool,
 ) -> Result<()> {
     let diff_output = match commit {
         Some(c) => crate::diff::run_git_diff_commit(c, file)?,
@@ -52,7 +53,10 @@ pub fn list_hunks(
             id, hunk.file, func_part, additions, deletions
         );
 
-        if full {
+        if blame {
+            // Blame mode: show all lines with blame hashes (takes precedence over full)
+            print_blamed_lines(hunk, commit)?;
+        } else if full {
             // Full mode: show all lines with line numbers (like show command)
             let width = hunk.lines.len().to_string().len();
             for (i, line) in hunk.lines.iter().enumerate() {
@@ -75,6 +79,77 @@ pub fn list_hunks(
             }
         }
         println!();
+    }
+
+    Ok(())
+}
+
+fn print_blamed_lines(hunk: &crate::diff::DiffHunk, commit: Option<&str>) -> Result<()> {
+    use crate::blame::{get_blame, parse_hunk_header};
+
+    let (old_from, old_count, new_from, new_count) =
+        parse_hunk_header(&hunk.header).unwrap_or((1, 0, 1, 0));
+
+    // Determine blame revisions based on diff type
+    // For commit diffs: old = commit^, new = commit
+    // For unstaged/staged: old = HEAD, new = working tree (returns 0000000)
+    let (old_rev_str, new_rev): (String, Option<&str>) = match commit {
+        Some(c) => (format!("{}^", c), Some(c)),
+        None => ("HEAD".to_string(), None),
+    };
+
+    // Get blame for old side (for context and removed lines)
+    let old_blame = if hunk.old_file != "dev/null" && old_count > 0 {
+        get_blame(&hunk.old_file, old_from, old_count, Some(&old_rev_str)).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    // Get blame for new side (for context and added lines)
+    let new_blame = if hunk.new_file != "dev/null" && new_count > 0 {
+        get_blame(&hunk.new_file, new_from, new_count, new_rev).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    // Walk through lines with indices
+    let mut old_idx = 0usize;
+    let mut new_idx = 0usize;
+
+    for line in &hunk.lines {
+        let hash = if line.starts_with(' ') {
+            // Context line: use new side blame (exists in both)
+            let h = new_blame
+                .get(new_idx)
+                .map(|s| s.as_str())
+                .unwrap_or("0000000");
+            old_idx += 1;
+            new_idx += 1;
+            h.to_string()
+        } else if line.starts_with('-') {
+            // Removed line: use old side blame
+            let h = old_blame
+                .get(old_idx)
+                .map(|s| s.as_str())
+                .unwrap_or("0000000");
+            old_idx += 1;
+            h.to_string()
+        } else if line.starts_with('+') {
+            // Added line: use new side blame (0000000 for uncommitted)
+            let h = new_blame
+                .get(new_idx)
+                .map(|s| s.as_str())
+                .unwrap_or("0000000");
+            new_idx += 1;
+            h.to_string()
+        } else {
+            // Unknown line type (e.g., "\ No newline"), skip blame
+            println!("  {}", line);
+            continue;
+        };
+
+        // Keep indentation to match existing preview line style
+        println!("  {} {}", hash, line);
     }
 
     Ok(())

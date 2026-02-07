@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 
+mod blame;
 mod diff;
 mod hunk;
 mod hunk_id;
@@ -31,6 +32,9 @@ enum Commands {
         /// Show full diff with line numbers (like show, but for all hunks)
         #[arg(long)]
         full: bool,
+        /// Show git blame information for each line
+        #[arg(long)]
+        blame: bool,
     },
     /// Show full diff for a specific hunk
     Show {
@@ -295,7 +299,8 @@ fn main() -> Result<()> {
             file,
             commit,
             full,
-        } => hunk::list_hunks(staged, file.as_deref(), commit.as_deref(), full)?,
+            blame,
+        } => hunk::list_hunks(staged, file.as_deref(), commit.as_deref(), full, blame)?,
         Commands::Show { id, commit } => hunk::show_hunk(&id, commit.as_deref())?,
         Commands::Stage { ids, lines } => hunk::apply_hunks(&ids, patch::ApplyMode::Stage, lines)?,
         Commands::Unstage { ids, lines } => {

@@ -1,6 +1,6 @@
 [package]
 name = "git-surgeon"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2024"
 authors = ["Raine Virta"]
 description = "Surgical git hunk control for AI agents"

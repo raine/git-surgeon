@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.7 (2026-02-07)
+
+- Add `--blame` flag to `hunks` command to show which commit introduced each
+  line
+
 ## v0.1.6 (2026-02-05)
 
 - Improve documentation for `squash` and `fixup` commands

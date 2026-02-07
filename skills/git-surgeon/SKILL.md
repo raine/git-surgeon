@@ -27,6 +27,11 @@ git-surgeon hunks --commit <HEAD/sha>
 # Show all hunks with line numbers (for small commits needing line-range splits)
 git-surgeon hunks --commit <sha> --full
 
+# Show blame info (which commit introduced each line)
+git-surgeon hunks --blame
+git-surgeon hunks --blame --staged
+git-surgeon hunks --blame --commit <sha>
+
 # Show full diff for a hunk (lines are numbered for use with --lines)
 git-surgeon show <id>
 git-surgeon show <id> --commit HEAD
@@ -113,6 +118,33 @@ If you already created a fixup commit, uncommit it first:
 ```bash
 git reset --soft HEAD~1
 git-surgeon fixup HEAD
+```
+
+### Using --blame to find the fixup target
+
+Use `--blame` to see which commit introduced the surrounding lines. This helps
+identify the right commit to fixup when a change belongs with earlier work:
+
+```bash
+git-surgeon hunks --blame
+```
+
+Output shows commit hashes for each line:
+```
+a1b2c3d src/auth.rs (+2 -0)
+  8922b52  fn login(user: &str) {
+  8922b52      validate(user);
+  0000000 +    log_attempt(user);  # new line, not yet committed
+  0000000 +    audit(user);        # new line, not yet committed
+  8922b52  }
+```
+
+The context lines show `8922b52` - that's the commit where this function was
+added. If your new lines belong with that change, fixup to it:
+
+```bash
+git-surgeon stage a1b2c3d
+git-surgeon fixup 8922b52
 ```
 
 ## Squashing commits

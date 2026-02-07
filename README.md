@@ -129,6 +129,9 @@ git-surgeon hunks --commit abc1234
 
 # Show full diff with line numbers (useful for small commits)
 git-surgeon hunks --commit abc1234 --full
+
+# Show blame information for each line (which commit introduced it)
+git-surgeon hunks --blame
 ```
 
 #### Example output
@@ -146,6 +149,22 @@ e4f5678 src/lib.rs (+1 -0)
 ```
 
 Each line shows: `<hunk-id> <file> [function context] (+additions -deletions)`
+
+#### Blamed output (--blame)
+
+Use `--blame` to see which commit introduced each line:
+
+```
+a1b2c3d src/main.rs fn handle_request (+3 -1)
+  8922b52  context line
+  b538223 -deleted line
+  0000000 +added line
+```
+
+- Context and removed lines show the 7-char hash of the commit that introduced
+  them
+- Added lines show `0000000` since they're uncommitted
+- For `--commit` diffs, added lines show the commit hash instead
 
 ---
 

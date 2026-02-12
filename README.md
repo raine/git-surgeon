@@ -1,4 +1,8 @@
-# git-surgeon
+<p align="center">
+  <img src="meta/logo2.webp" alt="git-surgeon logo" width="200">
+</p>
+
+<h1 align="center">git-surgeon</h1>
 
 `git-surgeon` gives AI agents surgical control over git changes without
 interactive prompts. Stage, unstage, or discard individual hunks. Commit hunks

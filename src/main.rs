@@ -9,7 +9,7 @@ mod patch;
 mod skill;
 
 #[derive(Parser)]
-#[command(name = "git-surgeon")]
+#[command(name = "git-surgeon", version)]
 #[command(about = "Non-interactive hunk-level git staging for AI agents")]
 struct Cli {
     #[command(subcommand)]

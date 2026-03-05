@@ -98,17 +98,19 @@ to stage individual hunks instead of entire files.
 
 ## Commands
 
-- [`hunks`](#hunks) — List hunks in the diff
-- [`show`](#show) — Show full diff for a specific hunk
-- [`stage`](#stage) — Stage hunks by ID
-- [`commit`](#commit) — Stage hunks and commit in one step
-- [`unstage`](#unstage) — Unstage hunks by ID
-- [`discard`](#discard) — Discard working tree changes for hunks
-- [`fixup`](#fixup) — Fold staged changes into an earlier commit
-- [`reword`](#reword) — Change the commit message of an existing commit
-- [`squash`](#squash) — Squash multiple commits into one
-- [`undo`](#undo) — Reverse-apply hunks from a commit
-- [`split`](#split) — Split a commit into multiple commits by hunk selection
+| Command               | Description                                            |
+| --------------------- | ------------------------------------------------------ |
+| [`hunks`](#hunks)     | List hunks in the diff                                 |
+| [`show`](#show)       | Show full diff for a specific hunk                     |
+| [`stage`](#stage)     | Stage hunks by ID                                      |
+| [`commit`](#commit)   | Stage hunks and commit in one step                     |
+| [`unstage`](#unstage) | Unstage hunks by ID                                    |
+| [`discard`](#discard) | Discard working tree changes for hunks                 |
+| [`fixup`](#fixup)     | Fold staged changes into an earlier commit             |
+| [`reword`](#reword)   | Change the commit message of an existing commit        |
+| [`squash`](#squash)   | Squash multiple commits into one                       |
+| [`undo`](#undo)       | Reverse-apply hunks from a commit                      |
+| [`split`](#split)     | Split a commit into multiple commits by hunk selection |
 
 ---
 

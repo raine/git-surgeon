@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.8 (2026-03-05)
+
+- Add `--version` flag to display the current version
+
 ## v0.1.7 (2026-02-07)
 
 - Add `--blame` flag to `hunks` command to show which commit introduced each

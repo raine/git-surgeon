@@ -71,7 +71,7 @@ cargo install git-surgeon
 brew install raine/git-surgeon/git-surgeon
 ```
 
-### 2. Install the AI assistant skill
+### 2. Install the agent skill
 
 ```bash
 # Claude Code
@@ -98,19 +98,20 @@ to stage individual hunks instead of entire files.
 
 ## Commands
 
-| Command               | Description                                            |
-| --------------------- | ------------------------------------------------------ |
-| [`hunks`](#hunks)     | List hunks in the diff                                 |
-| [`show`](#show)       | Show full diff for a specific hunk                     |
-| [`stage`](#stage)     | Stage hunks by ID                                      |
-| [`commit`](#commit)   | Stage hunks and commit in one step                     |
-| [`unstage`](#unstage) | Unstage hunks by ID                                    |
-| [`discard`](#discard) | Discard working tree changes for hunks                 |
-| [`fixup`](#fixup)     | Fold staged changes into an earlier commit             |
-| [`reword`](#reword)   | Change the commit message of an existing commit        |
-| [`squash`](#squash)   | Squash multiple commits into one                       |
-| [`undo`](#undo)       | Reverse-apply hunks from a commit                      |
-| [`split`](#split)     | Split a commit into multiple commits by hunk selection |
+| Command                   | Description                                            |
+| ------------------------- | ------------------------------------------------------ |
+| [`hunks`](#hunks)         | List hunks in the diff                                 |
+| [`show`](#show)           | Show full diff for a specific hunk                     |
+| [`stage`](#stage)         | Stage hunks by ID                                      |
+| [`commit`](#commit)       | Stage hunks and commit in one step                     |
+| [`commit-to`](#commit-to) | Commit hunks directly to another branch                |
+| [`unstage`](#unstage)     | Unstage hunks by ID                                    |
+| [`discard`](#discard)     | Discard working tree changes for hunks                 |
+| [`fixup`](#fixup)         | Fold staged changes into an earlier commit             |
+| [`reword`](#reword)       | Change the commit message of an existing commit        |
+| [`squash`](#squash)       | Squash multiple commits into one                       |
+| [`undo`](#undo)           | Reverse-apply hunks from a commit                      |
+| [`split`](#split)         | Split a commit into multiple commits by hunk selection |
 
 ---
 
@@ -227,6 +228,29 @@ git-surgeon commit a1b2c3d e4f5678 -m "add pagination"
 # With inline line ranges
 git-surgeon commit a1b2c3d:1-11 e4f5678 -m "add pagination"
 ```
+
+---
+
+### `commit-to`
+
+Commits hunks directly to another branch without checking it out. Useful in
+worktree setups where you want to commit changes to a branch that is checked out
+in a different worktree.
+
+```bash
+git-surgeon commit-to main a1b2c3d e4f5678 -m "fix typo in shared util"
+
+# With inline line ranges
+git-surgeon commit-to main a1b2c3d:1-11 e4f5678 -m "fix typo"
+```
+
+The command applies the selected hunks to the target branch's tree using git
+plumbing (no checkout required), creates a commit, and discards those hunks from
+the working tree. Refuses to run if the target is the current branch or the
+index has staged changes.
+
+If the patch cannot be applied cleanly to the target branch (e.g., the file has
+diverged), the command fails without modifying anything.
 
 ---
 

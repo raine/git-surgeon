@@ -209,11 +209,32 @@ pub fn build_patch(hunk: &DiffHunk) -> String {
 
 /// Apply a patch using git apply.
 pub fn apply_patch(patch: &str, mode: &ApplyMode) -> Result<()> {
+    apply_patch_impl(patch, mode, None)
+}
+
+/// Apply a patch using git apply against a specific index file.
+pub fn apply_patch_to_index(
+    patch: &str,
+    mode: &ApplyMode,
+    index_path: &std::path::Path,
+) -> Result<()> {
+    apply_patch_impl(patch, mode, Some(index_path))
+}
+
+fn apply_patch_impl(
+    patch: &str,
+    mode: &ApplyMode,
+    index_path: Option<&std::path::Path>,
+) -> Result<()> {
     use std::io::Write;
     use std::process::{Command, Stdio};
 
     let mut cmd = Command::new("git");
     cmd.arg("apply");
+
+    if let Some(idx) = index_path {
+        cmd.env("GIT_INDEX_FILE", idx);
+    }
 
     match mode {
         ApplyMode::Stage => {

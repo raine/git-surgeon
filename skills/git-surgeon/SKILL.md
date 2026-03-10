@@ -48,6 +48,10 @@ git-surgeon commit <id1> <id2> ... -m "message"
 # With inline line ranges
 git-surgeon commit <id>:1-11 <id2> -m "message"
 
+# Commit hunks directly to another branch (no checkout needed)
+git-surgeon commit-to <branch> <id1> <id2> ... -m "message"
+git-surgeon commit-to main <id>:1-11 <id2> -m "message"
+
 # Unstage specific hunks
 git-surgeon unstage <id1> <id2> ...
 git-surgeon unstage <id> --lines 5-30
@@ -106,6 +110,16 @@ git-surgeon split HEAD \
 3. Stage and commit in one step: `git-surgeon commit <id1> <id2> -m "message"`
 4. Or stage separately: `git-surgeon stage <id1> <id2>`, then `git commit`
 5. To commit only part of a hunk, use inline ranges: `git-surgeon commit <id>:5-30 -m "message"`
+
+## Committing to another branch
+
+Use `commit-to` when working in a worktree and you need to commit changes to a
+branch checked out elsewhere (e.g., main):
+
+1. Run `git-surgeon hunks` to list hunks
+2. Commit to another branch: `git-surgeon commit-to main <id1> <id2> -m "message"`
+3. The hunks are applied to the target branch's tree and discarded from the working tree
+4. Fails if the patch cannot be applied cleanly to the target branch
 
 ## Fixing up earlier commits
 

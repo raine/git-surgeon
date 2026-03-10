@@ -100,6 +100,16 @@ enum Commands {
         #[arg(short, long, required = true, num_args = 1)]
         message: Vec<String>,
     },
+    /// Commit hunks directly to another branch without checking it out
+    CommitTo {
+        /// Target branch name
+        branch: String,
+        /// Hunk IDs (optionally with :START-END range suffix)
+        ids: Vec<String>,
+        /// Commit message (multiple -m values are joined by blank lines, like git commit)
+        #[arg(short, long, required = true, num_args = 1)]
+        message: Vec<String>,
+    },
     /// Undo all changes to specific files from a commit
     UndoFile {
         /// File paths to undo
@@ -310,6 +320,11 @@ fn main() -> Result<()> {
             hunk::apply_hunks(&ids, patch::ApplyMode::Discard, lines)?
         }
         Commands::Commit { ids, message } => hunk::commit_hunks(&ids, &message.join("\n\n"))?,
+        Commands::CommitTo {
+            branch,
+            ids,
+            message,
+        } => hunk::commit_to_hunks(&branch, &ids, &message.join("\n\n"))?,
         Commands::Fixup { commit } => hunk::fixup(&commit)?,
         Commands::Reword { commit, message } => hunk::reword(&commit, &message.join("\n\n"))?,
         Commands::Undo { ids, from, lines } => hunk::undo_hunks(&ids, &from, lines)?,

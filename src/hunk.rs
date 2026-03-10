@@ -262,9 +262,8 @@ fn parse_id_range(raw: &str) -> Result<(&str, Vec<(usize, usize)>)> {
     }
 }
 
-/// Stage specified hunks and commit them. On commit failure, unstage to restore original state.
-pub fn commit_hunks(ids: &[String], message: &str) -> Result<()> {
-    // Refuse to proceed if there are already staged changes to avoid committing unrelated work
+/// Check that the index has no staged changes.
+fn require_clean_index() -> Result<()> {
     let status = Command::new("git")
         .args(["diff", "--cached", "--quiet"])
         .status()
@@ -272,39 +271,72 @@ pub fn commit_hunks(ids: &[String], message: &str) -> Result<()> {
     if !status.success() {
         anyhow::bail!("index already contains staged changes; commit or unstage them first");
     }
+    Ok(())
+}
 
-    let diff_output = crate::diff::run_git_diff(false, None)?;
-    let hunks = crate::diff::parse_diff(&diff_output);
-    let identified = assign_ids(&hunks);
+/// A resolved hunk entry: (id, line ranges, hunk reference).
+type HunkEntry<'a> = (String, Vec<(usize, usize)>, &'a DiffHunk);
 
-    // Build patch from all requested hunks, grouping ranges by hunk ID
-    let mut hunk_ranges: Vec<(String, Vec<(usize, usize)>)> = Vec::new();
+/// Parsed hunk ranges ready for patch building.
+struct ResolvedHunks<'a> {
+    entries: Vec<HunkEntry<'a>>,
+}
+
+/// Resolve hunk IDs against the current working tree diff.
+fn resolve_hunks<'a>(
+    ids: &[String],
+    identified: &'a [(String, &'a DiffHunk)],
+) -> Result<ResolvedHunks<'a>> {
+    let mut entries: Vec<HunkEntry> = Vec::new();
     for raw_id in ids {
         let (id, ranges) = parse_id_range(raw_id)?;
-        if let Some(entry) = hunk_ranges.iter_mut().find(|(eid, _)| eid == id) {
+        if let Some(entry) = entries.iter_mut().find(|(eid, _, _)| eid == id) {
             entry.1.extend(ranges);
         } else {
-            hunk_ranges.push((id.to_string(), ranges));
+            let (_, hunk) = identified
+                .iter()
+                .find(|(hunk_id, _)| hunk_id == id)
+                .ok_or_else(|| anyhow::anyhow!("hunk {} not found (re-run 'hunks')", id))?;
+            crate::diff::check_supported(hunk, id)?;
+            entries.push((id.to_string(), ranges, hunk));
         }
     }
+    Ok(ResolvedHunks { entries })
+}
 
+/// Build a combined patch from resolved hunks.
+/// When `reverse` is true, slicing preserves context appropriate for discard/reverse-apply.
+fn build_combined_patch(resolved: &ResolvedHunks, reverse: bool) -> Result<String> {
     let mut combined_patch = String::new();
-    for (id, ranges) in &hunk_ranges {
-        let (_, hunk) = identified
-            .iter()
-            .find(|(hunk_id, _)| hunk_id == id)
-            .ok_or_else(|| anyhow::anyhow!("hunk {} not found (re-run 'hunks')", id))?;
-
-        crate::diff::check_supported(hunk, id)?;
-
+    for (id, ranges, hunk) in &resolved.entries {
         let patched_hunk = if ranges.is_empty() {
             (*hunk).clone()
         } else {
-            slice_hunk_multi(hunk, ranges, false)?
+            slice_hunk_multi(hunk, ranges, reverse)?
         };
         combined_patch.push_str(&build_patch(&patched_hunk));
-        eprintln!("{}", id);
+        if !reverse {
+            eprintln!("{}", id);
+        }
     }
+    Ok(combined_patch)
+}
+
+/// Build a combined patch from the given hunk IDs (with optional inline ranges).
+/// Returns the patch string. Prints each matched hunk ID to stderr.
+fn build_patch_from_ids(ids: &[String]) -> Result<String> {
+    let diff_output = crate::diff::run_git_diff(false, None)?;
+    let hunks = crate::diff::parse_diff(&diff_output);
+    let identified = assign_ids(&hunks);
+    let resolved = resolve_hunks(ids, &identified)?;
+    build_combined_patch(&resolved, false)
+}
+
+/// Stage specified hunks and commit them. On commit failure, unstage to restore original state.
+pub fn commit_hunks(ids: &[String], message: &str) -> Result<()> {
+    require_clean_index()?;
+
+    let combined_patch = build_patch_from_ids(ids)?;
 
     // Stage the hunks
     apply_patch(&combined_patch, &ApplyMode::Stage)?;
@@ -324,6 +356,160 @@ pub fn commit_hunks(ids: &[String], message: &str) -> Result<()> {
         );
     }
 
+    Ok(())
+}
+
+/// Commit selected working-tree hunks directly to another branch without checking it out.
+pub fn commit_to_hunks(branch: &str, ids: &[String], message: &str) -> Result<()> {
+    require_clean_index()?;
+
+    // Resolve target branch and verify it exists
+    let target_ref = format!("refs/heads/{}", branch);
+    let target_sha =
+        crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", "--verify", &target_ref]))
+            .with_context(|| format!("branch '{}' not found", branch))?;
+    let target_sha = target_sha.trim().to_string();
+
+    // Reject if target is the current branch
+    let current_ref = Command::new("git")
+        .args(["symbolic-ref", "--quiet", "HEAD"])
+        .output()
+        .context("failed to check current branch")?;
+    if current_ref.status.success() {
+        let current = String::from_utf8_lossy(&current_ref.stdout)
+            .trim()
+            .to_string();
+        if current == target_ref {
+            anyhow::bail!(
+                "target branch '{}' is currently checked out; use 'commit' instead",
+                branch
+            );
+        }
+    }
+
+    // Build patches from selected hunks
+    // We need two versions: forward (for applying to target index) and reverse-sliced (for discard)
+    let diff_output = crate::diff::run_git_diff(false, None)?;
+    let hunks = crate::diff::parse_diff(&diff_output);
+    let identified = assign_ids(&hunks);
+    let resolved = resolve_hunks(ids, &identified)?;
+
+    let stage_patch = build_combined_patch(&resolved, false)?;
+    if stage_patch.is_empty() {
+        anyhow::bail!("no hunks selected");
+    }
+    let discard_patch = build_combined_patch(&resolved, true)?;
+
+    // Create temp index file
+    let git_dir = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", "--git-dir"]))?;
+    let git_dir = git_dir.trim();
+    let tmp_index =
+        std::path::PathBuf::from(git_dir).join(format!("surgeon-tmp-index-{}", std::process::id()));
+
+    // Ensure cleanup on all exit paths
+    let result = commit_to_with_index(
+        branch,
+        &target_ref,
+        &target_sha,
+        &stage_patch,
+        message,
+        &tmp_index,
+    );
+
+    // Always clean up temp index
+    let _ = std::fs::remove_file(&tmp_index);
+
+    // If the commit succeeded, discard from working tree
+    match result {
+        Ok(()) => {
+            apply_patch(&discard_patch, &ApplyMode::Discard).with_context(|| {
+                format!(
+                    "committed to {} but failed to discard local hunks; \
+                     the changes are still in your working tree",
+                    branch
+                )
+            })?;
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
+}
+
+fn commit_to_with_index(
+    branch: &str,
+    target_ref: &str,
+    target_sha: &str,
+    patch: &str,
+    message: &str,
+    tmp_index: &std::path::Path,
+) -> Result<()> {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    // Read target branch tree into temp index
+    let status = Command::new("git")
+        .env("GIT_INDEX_FILE", tmp_index)
+        .args(["read-tree", target_sha])
+        .status()
+        .context("failed to read target branch tree")?;
+    if !status.success() {
+        anyhow::bail!("git read-tree failed for {}", branch);
+    }
+
+    // Apply patch to temp index
+    crate::patch::apply_patch_to_index(patch, &ApplyMode::Stage, tmp_index).with_context(|| {
+        format!(
+            "failed to apply patch to branch '{}'; changes may be incompatible with that branch",
+            branch
+        )
+    })?;
+
+    // Write tree from temp index
+    let tree_sha = crate::diff::run_git_cmd(
+        Command::new("git")
+            .env("GIT_INDEX_FILE", tmp_index)
+            .args(["write-tree"]),
+    )?;
+    let tree_sha = tree_sha.trim();
+
+    // Create commit with message via stdin (-F -)
+    let mut cmd = Command::new("git");
+    cmd.args(["commit-tree", tree_sha, "-p", target_sha, "-F", "-"]);
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn().context("failed to run git commit-tree")?;
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(message.as_bytes())?;
+    let output = child.wait_with_output()?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "git commit-tree failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let commit_sha = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    // Update branch ref with CAS (compare-and-swap)
+    let output = Command::new("git")
+        .args(["update-ref", target_ref, &commit_sha, target_sha])
+        .output()
+        .context("failed to update branch ref")?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "git update-ref failed (branch may have moved): {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    eprintln!(
+        "committed to {}: {}",
+        branch,
+        &commit_sha[..7.min(commit_sha.len())]
+    );
     Ok(())
 }
 

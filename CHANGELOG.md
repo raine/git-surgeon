@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.9 (2026-03-10)
+
+- Add `commit-to` command to commit selected hunks directly to another branch
+  without checking it out
+
 ## v0.1.8 (2026-03-05)
 
 - Add `--version` flag to display the current version

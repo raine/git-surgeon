@@ -578,14 +578,14 @@ pub fn undo_files(files: &[String], commit: &str) -> Result<()> {
 
 /// Fold currently staged changes into an earlier commit via autosquash rebase.
 /// If the target is HEAD, uses simple --amend instead.
-pub fn fixup(commit: &str) -> Result<()> {
+pub fn amend(commit: &str) -> Result<()> {
     // Verify there are staged changes
     let status = Command::new("git")
         .args(["diff", "--cached", "--quiet"])
         .status()
         .context("failed to run git diff")?;
     if status.success() {
-        anyhow::bail!("no staged changes to fixup");
+        anyhow::bail!("no staged changes to amend");
     }
 
     // Check no rebase/cherry-pick in progress
@@ -662,7 +662,7 @@ pub fn fixup(commit: &str) -> Result<()> {
         }
     }
 
-    // Print short sha + subject of the fixed-up commit
+    // Print short sha + subject of the amended commit
     let info = crate::diff::run_git_cmd(Command::new("git").args([
         "log",
         "-1",
@@ -670,7 +670,195 @@ pub fn fixup(commit: &str) -> Result<()> {
         target_sha,
     ]));
     if let Ok(info) = info {
-        eprintln!("fixed up {}", info.trim());
+        eprintln!("amended {}", info.trim());
+    }
+
+    Ok(())
+}
+
+/// Rewrite a rebase todo file to move the source commit after the target and change it to fixup.
+pub fn edit_todo(file: &str, source: &str, target: &str) -> Result<()> {
+    let content = std::fs::read_to_string(file).context("failed to read todo file")?;
+    let mut lines: Vec<String> = content.lines().map(String::from).collect();
+
+    // Find and remove the source line
+    let source_short = &source[..7.min(source.len())];
+    let target_short = &target[..7.min(target.len())];
+
+    let source_idx = lines.iter().position(|l| {
+        let l = l.trim();
+        !l.starts_with('#')
+            && l.split_whitespace()
+                .nth(1)
+                .is_some_and(|sha| sha.starts_with(source_short) || source.starts_with(sha))
+    });
+    let source_idx = source_idx
+        .ok_or_else(|| anyhow::anyhow!("source commit {} not found in todo", source_short))?;
+    let mut source_line = lines.remove(source_idx);
+
+    // Change the action to fixup
+    if let Some(rest) = source_line.strip_prefix("pick ") {
+        source_line = format!("fixup {}", rest);
+    }
+
+    // Find the target line and insert source after it
+    let target_idx = lines.iter().position(|l| {
+        let l = l.trim();
+        !l.starts_with('#')
+            && l.split_whitespace()
+                .nth(1)
+                .is_some_and(|sha| sha.starts_with(target_short) || target.starts_with(sha))
+    });
+    let target_idx = target_idx
+        .ok_or_else(|| anyhow::anyhow!("target commit {} not found in todo", target_short))?;
+
+    lines.insert(target_idx + 1, source_line);
+
+    std::fs::write(file, lines.join("\n") + "\n").context("failed to write todo file")?;
+    Ok(())
+}
+
+/// Fold an existing commit into an earlier commit.
+/// If source is None, defaults to HEAD.
+pub fn fixup(target: &str, source: Option<&str>) -> Result<()> {
+    check_no_rebase_in_progress()?;
+
+    // Resolve target and source SHAs
+    let target_sha = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", target]))?;
+    let target_sha = target_sha.trim().to_string();
+
+    let head_sha = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", "HEAD"]))?;
+    let head_sha = head_sha.trim().to_string();
+
+    let source_sha = match source {
+        Some(s) => {
+            let sha = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", s]))?;
+            sha.trim().to_string()
+        }
+        None => head_sha.clone(),
+    };
+
+    if target_sha == source_sha {
+        anyhow::bail!("target and source are the same commit");
+    }
+
+    // Verify target is ancestor of source
+    let is_ancestor = Command::new("git")
+        .args(["merge-base", "--is-ancestor", &target_sha, &source_sha])
+        .status()
+        .context("failed to check ancestry")?;
+    if !is_ancestor.success() {
+        anyhow::bail!(
+            "commit {} is not an ancestor of {}",
+            &target_sha[..7.min(target_sha.len())],
+            &source_sha[..7.min(source_sha.len())]
+        );
+    }
+
+    // If source != HEAD, verify source is ancestor of HEAD
+    if source_sha != head_sha {
+        let is_ancestor = Command::new("git")
+            .args(["merge-base", "--is-ancestor", &source_sha, &head_sha])
+            .status()
+            .context("failed to check ancestry")?;
+        if !is_ancestor.success() {
+            anyhow::bail!(
+                "source commit {} is not an ancestor of HEAD",
+                &source_sha[..7.min(source_sha.len())]
+            );
+        }
+    }
+
+    // Check for merge commits in range
+    let merges = Command::new("git")
+        .args([
+            "rev-list",
+            "--merges",
+            &format!("{}..{}", target_sha, source_sha),
+        ])
+        .output()
+        .context("failed to check for merge commits")?;
+    if !String::from_utf8_lossy(&merges.stdout).trim().is_empty() {
+        anyhow::bail!("range contains merge commits; fixup cannot proceed");
+    }
+
+    if source_sha == head_sha {
+        // Source is HEAD: soft-reset to uncommit, then amend into target
+        let output = Command::new("git")
+            .args(["reset", "--soft", "HEAD~1"])
+            .output()
+            .context("failed to reset HEAD")?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "git reset failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        // Now staged changes contain the source commit's diff -- delegate to amend
+        amend(&target_sha)?;
+    } else {
+        // Source is not HEAD: use rebase with custom todo editor
+        let exe = std::env::current_exe().context("failed to get current executable path")?;
+
+        // Check if target is root commit
+        let is_root = Command::new("git")
+            .args(["rev-parse", "--verify", &format!("{}^", target_sha)])
+            .output()
+            .map(|o| !o.status.success())
+            .unwrap_or(false);
+
+        let editor = format!(
+            "{} _edit-todo --source {} --target {}",
+            exe.display(),
+            source_sha,
+            target_sha
+        );
+
+        let mut rebase_cmd = Command::new("git");
+        rebase_cmd.args(["rebase", "-i", "--autostash"]);
+        if is_root {
+            rebase_cmd.arg("--root");
+        } else {
+            rebase_cmd.arg(format!("{}~1", target_sha));
+        }
+        rebase_cmd.env("GIT_SEQUENCE_EDITOR", &editor);
+
+        let output = rebase_cmd.output().context("failed to run rebase")?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!(
+                "error: rebase conflict while fixing up into {}",
+                &target_sha[..7.min(target_sha.len())]
+            );
+            eprintln!("resolve conflicts and run: git rebase --continue");
+            eprintln!("or abort with: git rebase --abort");
+            anyhow::bail!("rebase failed: {}", stderr);
+        }
+
+        // Print result
+        let distance = crate::diff::run_git_cmd(Command::new("git").args([
+            "rev-list",
+            "--count",
+            &format!("{}..HEAD", target_sha),
+        ]));
+        // Use distance to find the rebased target commit
+        if let Ok(d) = distance {
+            let d: usize = d.trim().parse().unwrap_or(0);
+            let ref_spec = if d == 0 {
+                "HEAD".to_string()
+            } else {
+                format!("HEAD~{}", d)
+            };
+            let info = crate::diff::run_git_cmd(Command::new("git").args([
+                "log",
+                "-1",
+                "--format=%h %s",
+                &ref_spec,
+            ]));
+            if let Ok(info) = info {
+                eprintln!("fixed up {}", info.trim());
+            }
+        }
     }
 
     Ok(())

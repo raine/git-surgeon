@@ -1,6 +1,6 @@
 ---
 name: git-surgeon
-description: Non-interactive hunk-level git staging, unstaging, discarding, undoing, fixup, squash, and commit splitting. Use when selectively staging, unstaging, discarding, reverting, squashing, or splitting individual diff hunks by ID instead of interactively.
+description: Non-interactive hunk-level git staging, unstaging, discarding, undoing, fixup, amend, squash, and commit splitting. Use when selectively staging, unstaging, discarding, reverting, squashing, or splitting individual diff hunks by ID instead of interactively.
 ---
 
 # git-surgeon
@@ -60,15 +60,19 @@ git-surgeon unstage <id> --lines 5-30
 git-surgeon discard <id1> <id2> ...
 git-surgeon discard <id> --lines 5-30
 
-# Fixup an earlier commit with currently staged changes
-git-surgeon fixup <commit>
+# Fold a commit into an earlier commit (default: HEAD into target)
+git-surgeon fixup <target>
+git-surgeon fixup <target> --from <commit>
+
+# Fold staged changes into an earlier commit
+git-surgeon amend <commit>
 
 # Change commit message
 git-surgeon reword HEAD -m "new message"
 git-surgeon reword <commit> -m "new message"
 git-surgeon reword HEAD -m "subject" -m "body"
 
-# Squash multiple commits into one
+# Squash ALL commits from <commit> through HEAD into one
 git-surgeon squash HEAD~1 -m "combined feature"
 git-surgeon squash HEAD~2 -m "Add user auth" -m "Implements JWT-based authentication."
 git-surgeon squash <commit> -m "feature complete"
@@ -124,23 +128,19 @@ branch checked out elsewhere (e.g., main):
 3. The hunks are applied to the target branch's tree and discarded from the working tree
 4. Fails if the patch cannot be applied cleanly to the target branch
 
-## Fixing up earlier commits
+## Folding fix commits into earlier commits
 
-1. Stage desired hunks: `git-surgeon stage <id1> <id2>`
-2. Fixup the target commit: `git-surgeon fixup <commit-sha>`
-3. For HEAD, this amends directly; for older commits, it uses autosquash rebase
-4. Unstaged changes are preserved automatically
+`fixup` folds a commit into an earlier one. The source (default: HEAD) is
+removed from history and its changes merge into the target. Intermediate
+commits stay untouched. Dirty working tree is autostashed.
 
-If you already created a fixup commit, uncommit it first:
-```bash
-git reset --soft HEAD~1
-git-surgeon fixup HEAD
-```
+- `git-surgeon fixup <target>` -- fold HEAD into target (most common)
+- `git-surgeon fixup <target> --from <commit>` -- fold a specific non-HEAD commit
+- Fails if the range contains merge commits
 
 ### Using --blame to find the fixup target
 
-Use `--blame` to see which commit introduced the surrounding lines. This helps
-identify the right commit to fixup when a change belongs with earlier work:
+Use `--blame` to see which commit introduced the surrounding lines:
 
 ```bash
 git-surgeon hunks --blame
@@ -156,20 +156,27 @@ a1b2c3d src/auth.rs (+2 -0)
   8922b52  }
 ```
 
-The context lines show `8922b52` - that's the commit where this function was
-added. If your new lines belong with that change, fixup to it:
+The context lines show `8922b52` -- that's the commit where this function was
+added. If your new lines belong with that change:
 
 ```bash
-git-surgeon stage a1b2c3d
+git-surgeon commit a1b2c3d -m "add login logging"
 git-surgeon fixup 8922b52
 ```
 
+## Amending earlier commits with staged changes
+
+`amend` folds staged changes into an earlier commit. For HEAD, amends directly;
+for older commits, uses autosquash rebase. Unstaged changes are preserved.
+
+1. Stage desired hunks: `git-surgeon stage <id1> <id2>`
+2. Amend the target commit: `git-surgeon amend <commit-sha>`
+
 ## Squashing commits
 
-**WARNING:** Squash collapses ALL commits from the target through HEAD into a
-single commit. Every intermediate commit in the range is merged -- there is no
-way to skip commits in between. If you only need to fold one commit into a
-non-adjacent earlier commit, use **fixup** instead (see below).
+Squash collapses ALL commits from the target through HEAD into a single commit.
+Every intermediate commit in the range is merged. To fold one commit into a
+non-adjacent earlier commit without collapsing the range, use `fixup` instead.
 
 1. Squash commits from a target commit through HEAD: `git-surgeon squash HEAD~2 -m "combined"`
 2. Use multiple `-m` flags for subject + body: `git-surgeon squash HEAD~1 -m "Subject" -m "Body paragraph"`
@@ -177,20 +184,6 @@ non-adjacent earlier commit, use **fixup** instead (see below).
 4. Use `--force` to squash ranges containing merge commits
 5. Uncommitted changes are autostashed and restored
 6. Author from the oldest commit is preserved by default; use `--no-preserve-author` for current user
-
-### Squash vs fixup
-
-- **squash**: Collapse a contiguous range of commits (target..HEAD) into one.
-  Use when ALL commits in the range should become a single commit.
-- **fixup**: Fold staged changes into a specific earlier commit without
-  touching any other commits. Use when you want to amend an earlier commit
-  with new changes or fold a fix commit into its target.
-
-To fold a fix commit at HEAD into an earlier non-adjacent commit:
-```bash
-git reset --soft HEAD~1          # uncommit the fix, keep changes staged
-git-surgeon fixup <target-sha>   # fold into the target commit
-```
 
 ## Undoing changes from commits
 

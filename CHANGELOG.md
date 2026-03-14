@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.10 (2026-03-14)
+
+- Add `update` command to self-update git-surgeon from GitHub releases
+
 ## v0.1.9 (2026-03-10)
 
 - Add `commit-to` command to commit selected hunks directly to another branch

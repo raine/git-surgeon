@@ -107,7 +107,8 @@ to stage individual hunks instead of entire files.
 | [`commit-to`](#commit-to) | Commit hunks directly to another branch                |
 | [`unstage`](#unstage)     | Unstage hunks by ID                                    |
 | [`discard`](#discard)     | Discard working tree changes for hunks                 |
-| [`fixup`](#fixup)         | Fold staged changes into an earlier commit             |
+| [`fixup`](#fixup)         | Fold a commit into an earlier commit                   |
+| [`amend`](#amend)         | Fold staged changes into an earlier commit             |
 | [`reword`](#reword)       | Change the commit message of an existing commit        |
 | [`squash`](#squash)       | Squash multiple commits into one                       |
 | [`undo`](#undo)           | Reverse-apply hunks from a commit                      |
@@ -289,17 +290,37 @@ hunks.
 
 ### `fixup`
 
+Folds a commit into an earlier commit, removing the source commit from history
+and merging its changes into the target. Intermediate commits are preserved.
+By default, folds HEAD into the target.
+
+```bash
+# Fold HEAD into an earlier commit
+git-surgeon fixup abc1234
+
+# Fold a specific commit (not HEAD) into an earlier one
+git-surgeon fixup abc1234 --from def5678
+```
+
+Uses a rebase internally. If a conflict occurs, the repo is left in the
+conflict state for manual resolution (`git rebase --continue` or
+`git rebase --abort`). Dirty working tree is autostashed and restored.
+
+---
+
+### `amend`
+
 Folds currently staged changes into an earlier commit. Uses `git commit --amend`
 for HEAD, or an autosquash rebase for older commits. Unstaged changes are
 preserved via `--autostash`.
 
 ```bash
-# Stage some hunks, then fixup an earlier commit
+# Stage some hunks, then amend an earlier commit
 git-surgeon stage a1b2c3d
-git-surgeon fixup abc1234
+git-surgeon amend abc1234
 
-# Fixup HEAD (equivalent to git commit --amend --no-edit)
-git-surgeon fixup HEAD
+# Amend HEAD (equivalent to git commit --amend --no-edit)
+git-surgeon amend HEAD
 ```
 
 If the rebase hits a conflict, the repo is left in the conflict state for manual

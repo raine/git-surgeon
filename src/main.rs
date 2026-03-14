@@ -80,10 +80,30 @@ enum Commands {
         #[arg(long, value_parser = parse_line_range)]
         lines: Option<(usize, usize)>,
     },
-    /// Fixup an earlier commit with currently staged changes
+    /// Fold a commit into an earlier commit (default: HEAD into target)
     Fixup {
+        /// Target commit to fold changes into
+        target: String,
+        /// Source commit to fold (defaults to HEAD)
+        #[arg(long)]
+        from: Option<String>,
+    },
+    /// Fold staged changes into an earlier commit
+    Amend {
         /// Target commit to fold staged changes into
         commit: String,
+    },
+    /// Hidden: rewrite rebase todo for fixup
+    #[command(name = "_edit-todo", hide = true)]
+    EditTodo {
+        /// Path to the rebase todo file
+        file: String,
+        /// Source commit SHA to move
+        #[arg(long)]
+        source: String,
+        /// Target commit SHA to fold into
+        #[arg(long)]
+        target: String,
     },
     /// Change the commit message of an existing commit
     Reword {
@@ -336,7 +356,13 @@ fn main() -> Result<()> {
             ids,
             message,
         } => hunk::commit_to_hunks(&branch, &ids, &message.join("\n\n"))?,
-        Commands::Fixup { commit } => hunk::fixup(&commit)?,
+        Commands::Fixup { target, from } => hunk::fixup(&target, from.as_deref())?,
+        Commands::Amend { commit } => hunk::amend(&commit)?,
+        Commands::EditTodo {
+            file,
+            source,
+            target,
+        } => hunk::edit_todo(&file, &source, &target)?,
         Commands::Reword { commit, message } => hunk::reword(&commit, &message.join("\n\n"))?,
         Commands::Undo { ids, from, lines } => hunk::undo_hunks(&ids, &from, lines)?,
         Commands::UndoFile { files, from } => hunk::undo_files(&files, &from)?,

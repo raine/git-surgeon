@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.1.11 (2026-03-14)
+
+- Add `fixup` command to fold a commit into an earlier commit without manual
+  rebase (`git-surgeon fixup <target>` or
+  `git-surgeon fixup <target> --from <sha>`)
+- Rename the old staged-changes fixup behavior to a new `amend` command
+  (`git-surgeon amend <target>`)
+
 ## v0.1.10 (2026-03-14)
 
 - Add `update` command to self-update git-surgeon from GitHub releases

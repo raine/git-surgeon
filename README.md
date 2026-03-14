@@ -112,6 +112,7 @@ to stage individual hunks instead of entire files.
 | [`squash`](#squash)       | Squash multiple commits into one                       |
 | [`undo`](#undo)           | Reverse-apply hunks from a commit                      |
 | [`split`](#split)         | Split a commit into multiple commits by hunk selection |
+| [`update`](#update)       | Update git-surgeon to the latest version               |
 
 ---
 
@@ -411,6 +412,24 @@ omitted; supports multiple values for body).
 
 Requires a clean working tree. For non-HEAD commits, uses interactive rebase
 with `--autostash`.
+
+### `update`
+
+Updates git-surgeon to the latest GitHub release. Downloads the appropriate
+platform binary, verifies its SHA-256 checksum, and replaces the current
+executable.
+
+```bash
+git-surgeon update
+```
+
+If installed via Homebrew, use `brew upgrade git-surgeon` instead.
+
+git-surgeon also checks for updates automatically in the background (once per 24
+hours) and prints a notice when a newer version is available. Disable with
+`GIT_SURGEON_NO_UPDATE_CHECK=1`.
+
+---
 
 ## How hunk IDs work
 

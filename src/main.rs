@@ -7,6 +7,7 @@ mod hunk;
 mod hunk_id;
 mod patch;
 mod skill;
+mod update;
 
 #[derive(Parser)]
 #[command(name = "git-surgeon", version)]
@@ -141,6 +142,11 @@ enum Commands {
         #[arg(long)]
         no_preserve_author: bool,
     },
+    /// Update git-surgeon to the latest version
+    Update,
+    /// Hidden: background update check
+    #[command(name = "_check-update", hide = true)]
+    CheckUpdate,
     /// Install the git-surgeon skill for AI coding assistants
     InstallSkill {
         /// Install for Claude Code (~/.claude/skills/)
@@ -303,6 +309,11 @@ fn parse_line_range(s: &str) -> Result<(usize, usize), String> {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Show update notification on non-update commands
+    if !matches!(cli.command, Commands::Update | Commands::CheckUpdate) {
+        update::check_and_notify();
+    }
+
     match cli.command {
         Commands::Hunks {
             staged,
@@ -341,6 +352,8 @@ fn main() -> Result<()> {
         } => {
             hunk::squash(&commit, &message.join("\n\n"), force, !no_preserve_author)?;
         }
+        Commands::Update => update::run()?,
+        Commands::CheckUpdate => update::run_background_check()?,
         Commands::InstallSkill {
             claude,
             opencode,

@@ -96,6 +96,9 @@ git-surgeon split HEAD \
 git-surgeon split <commit> \
   --pick <id>:1-11,20-30 <id2> -m "partial split"
 
+# Update git-surgeon to the latest version
+git-surgeon update
+
 # Split into three+ commits
 git-surgeon split HEAD \
   --pick <id1> -m "first" \

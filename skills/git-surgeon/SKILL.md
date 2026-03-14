@@ -166,12 +166,31 @@ git-surgeon fixup 8922b52
 
 ## Squashing commits
 
+**WARNING:** Squash collapses ALL commits from the target through HEAD into a
+single commit. Every intermediate commit in the range is merged -- there is no
+way to skip commits in between. If you only need to fold one commit into a
+non-adjacent earlier commit, use **fixup** instead (see below).
+
 1. Squash commits from a target commit through HEAD: `git-surgeon squash HEAD~2 -m "combined"`
 2. Use multiple `-m` flags for subject + body: `git-surgeon squash HEAD~1 -m "Subject" -m "Body paragraph"`
 3. Target commit must be an ancestor of HEAD
 4. Use `--force` to squash ranges containing merge commits
 5. Uncommitted changes are autostashed and restored
 6. Author from the oldest commit is preserved by default; use `--no-preserve-author` for current user
+
+### Squash vs fixup
+
+- **squash**: Collapse a contiguous range of commits (target..HEAD) into one.
+  Use when ALL commits in the range should become a single commit.
+- **fixup**: Fold staged changes into a specific earlier commit without
+  touching any other commits. Use when you want to amend an earlier commit
+  with new changes or fold a fix commit into its target.
+
+To fold a fix commit at HEAD into an earlier non-adjacent commit:
+```bash
+git reset --soft HEAD~1          # uncommit the fix, keep changes staged
+git-surgeon fixup <target-sha>   # fold into the target commit
+```
 
 ## Undoing changes from commits
 

@@ -30,6 +30,10 @@ clippy-fix:
 build:
     cargo build --all
 
+# Set up git hooks
+setup:
+    git config core.hooksPath hooks
+
 # Install release binary globally
 install:
     cargo install --offline --path . --locked

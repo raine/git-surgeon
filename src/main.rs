@@ -93,17 +93,35 @@ enum Commands {
         /// Target commit to fold staged changes into
         commit: String,
     },
-    /// Hidden: rewrite rebase todo for fixup
+    /// Move a commit to a different position in history
+    #[command(group = clap::ArgGroup::new("position").required(true))]
+    Move {
+        /// Commit SHA to move
+        commit: String,
+        /// Move after this commit
+        #[arg(long, group = "position")]
+        after: Option<String>,
+        /// Move before this commit
+        #[arg(long, group = "position")]
+        before: Option<String>,
+        /// Move to the end of the branch (after HEAD)
+        #[arg(long, group = "position")]
+        to_end: bool,
+    },
+    /// Hidden: rewrite rebase todo for fixup or move
     #[command(name = "_edit-todo", hide = true)]
     EditTodo {
         /// Path to the rebase todo file
         file: String,
-        /// Source commit SHA to move
+        /// Source commit SHA
         #[arg(long)]
         source: String,
-        /// Target commit SHA to fold into
+        /// Target commit SHA
         #[arg(long)]
         target: String,
+        /// Rewrite mode: fixup (default) or move
+        #[arg(long, default_value = "fixup")]
+        mode: String,
     },
     /// Change the commit message of an existing commit
     Reword {
@@ -358,11 +376,18 @@ fn main() -> Result<()> {
         } => hunk::commit_to_hunks(&branch, &ids, &message.join("\n\n"))?,
         Commands::Fixup { target, from } => hunk::fixup(&target, from.as_deref())?,
         Commands::Amend { commit } => hunk::amend(&commit)?,
+        Commands::Move {
+            commit,
+            after,
+            before,
+            to_end,
+        } => hunk::move_commit(&commit, after.as_deref(), before.as_deref(), to_end)?,
         Commands::EditTodo {
             file,
             source,
             target,
-        } => hunk::edit_todo(&file, &source, &target)?,
+            mode,
+        } => hunk::edit_todo(&file, &source, &target, &mode)?,
         Commands::Reword { commit, message } => hunk::reword(&commit, &message.join("\n\n"))?,
         Commands::Undo { ids, from, lines } => hunk::undo_hunks(&ids, &from, lines)?,
         Commands::UndoFile { files, from } => hunk::undo_files(&files, &from)?,

@@ -1,6 +1,6 @@
 ---
 name: git-surgeon
-description: Non-interactive hunk-level git staging, unstaging, discarding, undoing, fixup, amend, squash, and commit splitting. Use when selectively staging, unstaging, discarding, reverting, squashing, or splitting individual diff hunks by ID instead of interactively.
+description: Non-interactive hunk-level git staging, unstaging, discarding, undoing, fixup, amend, squash, commit splitting, and commit reordering. Use when selectively staging, unstaging, discarding, reverting, squashing, splitting, or reordering individual diff hunks by ID instead of interactively.
 ---
 
 # git-surgeon
@@ -99,6 +99,15 @@ git-surgeon split HEAD \
 # Split with line ranges (comma syntax or repeat ID for non-contiguous ranges)
 git-surgeon split <commit> \
   --pick <id>:1-11,20-30 <id2> -m "partial split"
+
+# Move a commit after another commit
+git-surgeon move <sha> --after <target-sha>
+
+# Move a commit before another commit
+git-surgeon move <sha> --before <target-sha>
+
+# Move a commit to the end of the branch
+git-surgeon move <sha> --to-end
 
 # Update git-surgeon to the latest version
 git-surgeon update
@@ -202,6 +211,17 @@ non-adjacent earlier commit without collapsing the range, use `fixup` instead.
    - For non-contiguous lines, use commas: `--pick <id>:2-6,34-37`
 5. Works on HEAD (direct reset) or earlier commits (via rebase)
 6. Requires a clean working tree
+
+## Moving commits
+
+`move` reorders commits in history. Useful for grouping related changes or
+moving a commit to a logical position after splitting.
+
+- `git-surgeon move <sha> --after <target>` -- place commit right after target
+- `git-surgeon move <sha> --before <target>` -- place commit right before target
+- `git-surgeon move <sha> --to-end` -- place commit at HEAD
+- Dirty working tree is autostashed
+- Fails if the range contains merge commits
 
 ## Hunk IDs
 

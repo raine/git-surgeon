@@ -677,14 +677,14 @@ pub fn amend(commit: &str) -> Result<()> {
 }
 
 /// Rewrite a rebase todo file to move the source commit after the target and change it to fixup.
-pub fn edit_todo(file: &str, source: &str, target: &str) -> Result<()> {
+pub fn edit_todo(file: &str, source: &str, target: &str, mode: &str) -> Result<()> {
     let content = std::fs::read_to_string(file).context("failed to read todo file")?;
     let mut lines: Vec<String> = content.lines().map(String::from).collect();
 
-    // Find and remove the source line
     let source_short = &source[..7.min(source.len())];
     let target_short = &target[..7.min(target.len())];
 
+    // Find and remove the source line
     let source_idx = lines.iter().position(|l| {
         let l = l.trim();
         !l.starts_with('#')
@@ -696,12 +696,20 @@ pub fn edit_todo(file: &str, source: &str, target: &str) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("source commit {} not found in todo", source_short))?;
     let mut source_line = lines.remove(source_idx);
 
-    // Change the action to fixup
-    if let Some(rest) = source_line.strip_prefix("pick ") {
-        source_line = format!("fixup {}", rest);
+    match mode {
+        "fixup" => {
+            // Change the action to fixup
+            if let Some(rest) = source_line.strip_prefix("pick ") {
+                source_line = format!("fixup {}", rest);
+            }
+        }
+        "move" | "move-before" => {
+            // Keep the line as-is (preserve pick action)
+        }
+        _ => anyhow::bail!("unknown edit-todo mode: {}", mode),
     }
 
-    // Find the target line and insert source after it
+    // Find the target line
     let target_idx = lines.iter().position(|l| {
         let l = l.trim();
         !l.starts_with('#')
@@ -712,9 +720,163 @@ pub fn edit_todo(file: &str, source: &str, target: &str) -> Result<()> {
     let target_idx = target_idx
         .ok_or_else(|| anyhow::anyhow!("target commit {} not found in todo", target_short))?;
 
-    lines.insert(target_idx + 1, source_line);
+    if mode == "move-before" {
+        lines.insert(target_idx, source_line);
+    } else {
+        lines.insert(target_idx + 1, source_line);
+    }
 
     std::fs::write(file, lines.join("\n") + "\n").context("failed to write todo file")?;
+    Ok(())
+}
+
+/// Move a commit to a different position in history.
+pub fn move_commit(
+    commit: &str,
+    after: Option<&str>,
+    before: Option<&str>,
+    to_end: bool,
+) -> Result<()> {
+    check_no_rebase_in_progress()?;
+
+    let source_sha = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", commit]))?;
+    let source_sha = source_sha.trim().to_string();
+
+    let head_sha = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", "HEAD"]))?;
+    let head_sha = head_sha.trim().to_string();
+
+    if source_sha == head_sha && to_end {
+        // Already at end, nothing to do
+        eprintln!("commit is already at HEAD");
+        return Ok(());
+    }
+
+    // Determine target SHA and insertion mode
+    let (target_sha, insert_after) = if to_end {
+        (head_sha.clone(), true)
+    } else if let Some(after_ref) = after {
+        let sha = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", after_ref]))?;
+        (sha.trim().to_string(), true)
+    } else if let Some(before_ref) = before {
+        let sha = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", before_ref]))?;
+        (sha.trim().to_string(), false)
+    } else {
+        anyhow::bail!("one of --after, --before, or --to-end is required");
+    };
+
+    if source_sha == target_sha {
+        anyhow::bail!("source and target are the same commit");
+    }
+
+    // Both commits must be ancestors of HEAD (i.e. in the current branch)
+    for (label, sha) in [("source", &source_sha), ("target", &target_sha)] {
+        let is_ancestor = Command::new("git")
+            .args(["merge-base", "--is-ancestor", sha, &head_sha])
+            .status()
+            .context("failed to check ancestry")?;
+        if !is_ancestor.success() {
+            anyhow::bail!(
+                "{} commit {} is not in the current branch",
+                label,
+                &sha[..7.min(sha.len())]
+            );
+        }
+    }
+
+    // Find the oldest commit involved to determine rebase range
+    let oldest_sha = {
+        let is_source_ancestor = Command::new("git")
+            .args(["merge-base", "--is-ancestor", &source_sha, &target_sha])
+            .status()
+            .context("failed to check ancestry")?;
+        if is_source_ancestor.success() {
+            source_sha.clone()
+        } else {
+            target_sha.clone()
+        }
+    };
+
+    // Check if oldest commit is root
+    let is_root = Command::new("git")
+        .args(["rev-parse", "--verify", &format!("{}^", oldest_sha)])
+        .output()
+        .map(|o| !o.status.success())
+        .unwrap_or(false);
+
+    // Check for merge commits in range
+    let merges_range = if is_root {
+        head_sha.clone()
+    } else {
+        format!("{}~1..{}", oldest_sha, head_sha)
+    };
+    let merges = Command::new("git")
+        .args(["rev-list", "--merges", &merges_range])
+        .output()
+        .context("failed to check for merge commits")?;
+    if !merges.status.success() {
+        anyhow::bail!(
+            "failed to check for merge commits: {}",
+            String::from_utf8_lossy(&merges.stderr)
+        );
+    }
+    if !String::from_utf8_lossy(&merges.stdout).trim().is_empty() {
+        anyhow::bail!("range contains merge commits; move cannot proceed");
+    }
+
+    let (editor_target, editor_mode) = if insert_after {
+        (target_sha.clone(), "move")
+    } else {
+        // For --before: we still use "move" mode but insert before target.
+        // We need a special mode for this.
+        (target_sha.clone(), "move-before")
+    };
+
+    let exe = std::env::current_exe().context("failed to get current executable path")?;
+
+    let editor = format!(
+        "{} _edit-todo --source {} --target {} --mode {}",
+        exe.display(),
+        source_sha,
+        editor_target,
+        editor_mode
+    );
+
+    let mut rebase_cmd = Command::new("git");
+    rebase_cmd.args(["rebase", "-i", "--autostash"]);
+    if is_root {
+        rebase_cmd.arg("--root");
+    } else {
+        rebase_cmd.arg(format!("{}~1", oldest_sha));
+    }
+    rebase_cmd.env("GIT_SEQUENCE_EDITOR", &editor);
+
+    let output = rebase_cmd.output().context("failed to run rebase")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!(
+            "error: rebase conflict while moving {}",
+            &source_sha[..7.min(source_sha.len())]
+        );
+        eprintln!("resolve conflicts and run: git rebase --continue");
+        eprintln!("or abort with: git rebase --abort");
+        anyhow::bail!("rebase failed: {}", stderr);
+    }
+
+    // Show the new commit order
+    let mut log_cmd = Command::new("git");
+    log_cmd.args(["log", "--oneline", "--reverse"]);
+    if is_root {
+        log_cmd.arg("HEAD");
+    } else {
+        log_cmd.arg(format!("{}~1..HEAD", oldest_sha));
+    }
+    if let Ok(log) = crate::diff::run_git_cmd(&mut log_cmd) {
+        eprintln!("moved commit, new order:");
+        for line in log.trim().lines() {
+            eprintln!("  {}", line);
+        }
+    }
+
     Ok(())
 }
 

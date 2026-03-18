@@ -113,6 +113,7 @@ to stage individual hunks instead of entire files.
 | [`squash`](#squash)       | Squash multiple commits into one                       |
 | [`undo`](#undo)           | Reverse-apply hunks from a commit                      |
 | [`split`](#split)         | Split a commit into multiple commits by hunk selection |
+| [`move`](#move)           | Move a commit to a different position in history       |
 | [`update`](#update)       | Update git-surgeon to the latest version               |
 
 ---
@@ -433,6 +434,30 @@ omitted; supports multiple values for body).
 
 Requires a clean working tree. For non-HEAD commits, uses interactive rebase
 with `--autostash`.
+
+### `move`
+
+Moves a commit to a different position in history. Useful for reordering
+commits to group related changes together.
+
+```bash
+# Move a commit after another commit
+git-surgeon move abc1234 --after def5678
+
+# Move a commit before another commit
+git-surgeon move abc1234 --before def5678
+
+# Move a commit to the end of the branch
+git-surgeon move abc1234 --to-end
+```
+
+Uses a rebase internally. If a conflict occurs, the repo is left in the
+conflict state for manual resolution (`git rebase --continue` or
+`git rebase --abort`). Dirty working tree is autostashed and restored.
+
+Fails if the range between the source and target contains merge commits.
+
+---
 
 ### `update`
 

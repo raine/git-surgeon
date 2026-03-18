@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.12 (2026-03-18)
+
+- Add `move` command to reorder commits in history without interactive rebase
+  (`git-surgeon move <sha> --after/--before/--to-end`)
+
 ## v0.1.11 (2026-03-14)
 
 - Add `fixup` command to fold a commit into an earlier commit without manual

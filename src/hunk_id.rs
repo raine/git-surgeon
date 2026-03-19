@@ -6,7 +6,7 @@ use crate::diff::DiffHunk;
 /// Compute raw hash for a hunk (before collision suffix).
 /// Hashes: file path + all hunk lines (context + changes).
 /// Excludes @@ header line numbers so IDs survive line shifts.
-fn compute_raw_id(hunk: &DiffHunk) -> String {
+pub fn compute_raw_id(hunk: &DiffHunk) -> String {
     let mut hasher = Sha1::new();
     hasher.update(hunk.file.as_bytes());
     for line in &hunk.lines {

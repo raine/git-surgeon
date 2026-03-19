@@ -1,11 +1,10 @@
 use anyhow::Result;
 use clap::Parser;
 
+pub use git_surgeon::{diff, hunk_id, patch};
+
 mod blame;
-mod diff;
 mod hunk;
-mod hunk_id;
-mod patch;
 mod skill;
 mod update;
 

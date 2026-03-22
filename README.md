@@ -4,6 +4,13 @@
 
 <h1 align="center">git-surgeon</h1>
 
+<p align="center">
+  <a href="#quick-start">Install</a> ·
+  <a href="#commands">Commands</a> ·
+  <a href="#examples">Examples</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
+
 `git-surgeon` gives AI agents surgical control over git changes without
 interactive prompts. Stage, unstage, or discard individual hunks. Commit hunks
 directly with line-range precision. Restructure history by splitting commits or
@@ -50,11 +57,11 @@ With git-surgeon, the agent can inspect hunks and commit them selectively:
 **Highlights**
 
 - Stage specific lines from a hunk, not just whole hunks
-  ([example](#example-splitting-a-hunk-across-commits))
+  ([example](#splitting-a-hunk-across-commits))
 - Split commits that mix concerns into focused commits
-  ([example](#example-splitting-a-commit-that-mixes-concerns))
+  ([example](#splitting-a-commit-that-mixes-concerns))
 - Retroactively split a combined commit into separate changes
-  ([example](#example-splitting-a-commit-retroactively))
+  ([example](#splitting-a-commit-retroactively))
 
 ## Quick start
 
@@ -509,7 +516,9 @@ git-surgeon commit a1b2c3d e4f5678 -m "implement feature A"
 git-surgeon commit f6g7h8i -m "implement feature B"
 ```
 
-## Example: splitting a hunk across commits
+## Examples
+
+### Splitting a hunk across commits
 
 A file has two unrelated changes (pagination + soft-delete filtering) that git
 groups into a single hunk. The agent uses `show` to see line numbers, then
@@ -580,7 +589,7 @@ groups into a single hunk. The agent uses `show` to see line numbers, then
       1 file changed, 3 insertions(+), 1 deletion(-)
 ```
 
-## Example: splitting a commit that mixes concerns
+### Splitting a commit that mixes concerns
 
 A commit mixes three unrelated changes: logging, pagination, and active user
 filtering. The agent uses `hunks --commit` to see the changes, `show --commit`
@@ -643,7 +652,7 @@ to examine line numbers, then `split` with line ranges to separate concerns:
 ✻ Sautéed for 35s
 ```
 
-## Example: splitting a commit retroactively
+### Splitting a commit retroactively
 
 An agent commits two unrelated changes together. The user asks to separate them
 after the fact using `split`:

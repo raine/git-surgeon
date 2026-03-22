@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.13 (2026-03-22)
+
+- Support folding multiple commits in a single `fixup` pass
+  (`git-surgeon fixup <target> --from A B C`)
+
 ## v0.1.12 (2026-03-18)
 
 - Add `move` command to reorder commits in history without interactive rebase

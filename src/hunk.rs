@@ -694,23 +694,29 @@ pub fn edit_todo(file: &str, sources: &[String], target: &str, mode: &str) -> Re
             while i < lines.len() {
                 let trimmed = lines[i].trim().to_string();
                 if !trimmed.starts_with('#')
-                    && let Some(sha) = trimmed.split_whitespace().nth(1) {
-                        let is_source = source_shorts.iter().any(|short| sha.starts_with(short))
-                            || sources.iter().any(|full| full.starts_with(sha));
-                        if is_source {
-                            let mut line = lines.remove(i);
-                            if let Some(rest) = line.strip_prefix("pick ") {
-                                line = format!("fixup {}", rest);
-                            }
-                            extracted.push(line);
-                            continue;
+                    && let Some(sha) = trimmed.split_whitespace().nth(1)
+                {
+                    let is_source = source_shorts.iter().any(|short| sha.starts_with(short))
+                        || sources.iter().any(|full| full.starts_with(sha));
+                    if is_source {
+                        let mut line = lines.remove(i);
+                        if let Some(rest) = line.strip_prefix("pick ") {
+                            line = format!("fixup {}", rest);
                         }
+                        extracted.push(line);
+                        continue;
                     }
+                }
                 i += 1;
             }
 
-            if extracted.is_empty() {
-                anyhow::bail!("no source commits found in todo");
+            if extracted.len() != sources.len() {
+                let found = extracted.len();
+                anyhow::bail!(
+                    "expected {} source commit(s) in todo but found {}",
+                    sources.len(),
+                    found
+                );
             }
 
             // Find the target line and insert all fixup lines after it

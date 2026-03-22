@@ -85,7 +85,7 @@ enum Commands {
         /// Target commit to fold changes into
         target: String,
         /// Source commit(s) to fold (defaults to HEAD). Multiple values fold all into target in one pass.
-        #[arg(long, num_args = 1..)]
+        #[arg(long, num_args = 1.., action = clap::ArgAction::Append)]
         from: Vec<String>,
     },
     /// Fold staged changes into an earlier commit

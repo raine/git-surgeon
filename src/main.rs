@@ -84,9 +84,9 @@ enum Commands {
     Fixup {
         /// Target commit to fold changes into
         target: String,
-        /// Source commit to fold (defaults to HEAD)
-        #[arg(long)]
-        from: Option<String>,
+        /// Source commit(s) to fold (defaults to HEAD). Multiple values fold all into target in one pass.
+        #[arg(long, num_args = 1..)]
+        from: Vec<String>,
     },
     /// Fold staged changes into an earlier commit
     Amend {
@@ -113,9 +113,9 @@ enum Commands {
     EditTodo {
         /// Path to the rebase todo file
         file: String,
-        /// Source commit SHA
-        #[arg(long)]
-        source: String,
+        /// Source commit SHA(s)
+        #[arg(long, action = clap::ArgAction::Append)]
+        source: Vec<String>,
         /// Target commit SHA
         #[arg(long)]
         target: String,
@@ -374,7 +374,7 @@ fn main() -> Result<()> {
             ids,
             message,
         } => hunk::commit_to_hunks(&branch, &ids, &message.join("\n\n"))?,
-        Commands::Fixup { target, from } => hunk::fixup(&target, from.as_deref())?,
+        Commands::Fixup { target, from } => hunk::fixup(&target, &from)?,
         Commands::Amend { commit } => hunk::amend(&commit)?,
         Commands::Move {
             commit,

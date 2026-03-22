@@ -291,9 +291,9 @@ hunks.
 
 ### `fixup`
 
-Folds a commit into an earlier commit, removing the source commit from history
-and merging its changes into the target. Intermediate commits are preserved.
-By default, folds HEAD into the target.
+Folds one or more commits into an earlier commit, removing the source commits
+from history and merging their changes into the target. Intermediate commits are
+preserved. By default, folds HEAD into the target.
 
 ```bash
 # Fold HEAD into an earlier commit
@@ -301,7 +301,14 @@ git-surgeon fixup abc1234
 
 # Fold a specific commit (not HEAD) into an earlier one
 git-surgeon fixup abc1234 --from def5678
+
+# Fold multiple commits into one target in a single pass
+git-surgeon fixup abc1234 --from def5678 aaa1111 bbb2222
 ```
+
+Multiple `--from` values are folded in a single rebase, avoiding repeated
+history rewrites and SHA tracking. Commits are applied in their original
+chronological order regardless of the order given on the command line.
 
 Uses a rebase internally. If a conflict occurs, the repo is left in the
 conflict state for manual resolution (`git rebase --continue` or

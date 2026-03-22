@@ -677,53 +677,97 @@ pub fn amend(commit: &str) -> Result<()> {
 }
 
 /// Rewrite a rebase todo file to move the source commit after the target and change it to fixup.
-pub fn edit_todo(file: &str, source: &str, target: &str, mode: &str) -> Result<()> {
+pub fn edit_todo(file: &str, sources: &[String], target: &str, mode: &str) -> Result<()> {
     let content = std::fs::read_to_string(file).context("failed to read todo file")?;
     let mut lines: Vec<String> = content.lines().map(String::from).collect();
 
-    let source_short = &source[..7.min(source.len())];
     let target_short = &target[..7.min(target.len())];
-
-    // Find and remove the source line
-    let source_idx = lines.iter().position(|l| {
-        let l = l.trim();
-        !l.starts_with('#')
-            && l.split_whitespace()
-                .nth(1)
-                .is_some_and(|sha| sha.starts_with(source_short) || source.starts_with(sha))
-    });
-    let source_idx = source_idx
-        .ok_or_else(|| anyhow::anyhow!("source commit {} not found in todo", source_short))?;
-    let mut source_line = lines.remove(source_idx);
 
     match mode {
         "fixup" => {
-            // Change the action to fixup
-            if let Some(rest) = source_line.strip_prefix("pick ") {
-                source_line = format!("fixup {}", rest);
+            // Build short SHA lookup set for all sources
+            let source_shorts: Vec<&str> = sources.iter().map(|s| &s[..7.min(s.len())]).collect();
+
+            // Extract source lines top-to-bottom (preserves chronological order)
+            let mut extracted = Vec::new();
+            let mut i = 0;
+            while i < lines.len() {
+                let trimmed = lines[i].trim().to_string();
+                if !trimmed.starts_with('#')
+                    && let Some(sha) = trimmed.split_whitespace().nth(1) {
+                        let is_source = source_shorts.iter().any(|short| sha.starts_with(short))
+                            || sources.iter().any(|full| full.starts_with(sha));
+                        if is_source {
+                            let mut line = lines.remove(i);
+                            if let Some(rest) = line.strip_prefix("pick ") {
+                                line = format!("fixup {}", rest);
+                            }
+                            extracted.push(line);
+                            continue;
+                        }
+                    }
+                i += 1;
+            }
+
+            if extracted.is_empty() {
+                anyhow::bail!("no source commits found in todo");
+            }
+
+            // Find the target line and insert all fixup lines after it
+            let target_idx = lines.iter().position(|l| {
+                let l = l.trim();
+                !l.starts_with('#')
+                    && l.split_whitespace()
+                        .nth(1)
+                        .is_some_and(|sha| sha.starts_with(target_short) || target.starts_with(sha))
+            });
+            let target_idx = target_idx.ok_or_else(|| {
+                anyhow::anyhow!("target commit {} not found in todo", target_short)
+            })?;
+
+            for (j, line) in extracted.into_iter().enumerate() {
+                lines.insert(target_idx + 1 + j, line);
             }
         }
         "move" | "move-before" => {
-            // Keep the line as-is (preserve pick action)
+            if sources.len() != 1 {
+                anyhow::bail!("move mode requires exactly one source commit");
+            }
+            let source = &sources[0];
+            let source_short = &source[..7.min(source.len())];
+
+            // Find and remove the source line
+            let source_idx = lines.iter().position(|l| {
+                let l = l.trim();
+                !l.starts_with('#')
+                    && l.split_whitespace()
+                        .nth(1)
+                        .is_some_and(|sha| sha.starts_with(source_short) || source.starts_with(sha))
+            });
+            let source_idx = source_idx.ok_or_else(|| {
+                anyhow::anyhow!("source commit {} not found in todo", source_short)
+            })?;
+            let source_line = lines.remove(source_idx);
+
+            // Find the target line
+            let target_idx = lines.iter().position(|l| {
+                let l = l.trim();
+                !l.starts_with('#')
+                    && l.split_whitespace()
+                        .nth(1)
+                        .is_some_and(|sha| sha.starts_with(target_short) || target.starts_with(sha))
+            });
+            let target_idx = target_idx.ok_or_else(|| {
+                anyhow::anyhow!("target commit {} not found in todo", target_short)
+            })?;
+
+            if mode == "move-before" {
+                lines.insert(target_idx, source_line);
+            } else {
+                lines.insert(target_idx + 1, source_line);
+            }
         }
         _ => anyhow::bail!("unknown edit-todo mode: {}", mode),
-    }
-
-    // Find the target line
-    let target_idx = lines.iter().position(|l| {
-        let l = l.trim();
-        !l.starts_with('#')
-            && l.split_whitespace()
-                .nth(1)
-                .is_some_and(|sha| sha.starts_with(target_short) || target.starts_with(sha))
-    });
-    let target_idx = target_idx
-        .ok_or_else(|| anyhow::anyhow!("target commit {} not found in todo", target_short))?;
-
-    if mode == "move-before" {
-        lines.insert(target_idx, source_line);
-    } else {
-        lines.insert(target_idx + 1, source_line);
     }
 
     std::fs::write(file, lines.join("\n") + "\n").context("failed to write todo file")?;
@@ -880,72 +924,83 @@ pub fn move_commit(
     Ok(())
 }
 
-/// Fold an existing commit into an earlier commit.
-/// If source is None, defaults to HEAD.
-pub fn fixup(target: &str, source: Option<&str>) -> Result<()> {
+/// Fold one or more commits into an earlier commit.
+/// If sources is empty, defaults to HEAD.
+pub fn fixup(target: &str, sources: &[String]) -> Result<()> {
     check_no_rebase_in_progress()?;
 
-    // Resolve target and source SHAs
+    // Resolve target SHA
     let target_sha = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", target]))?;
     let target_sha = target_sha.trim().to_string();
 
     let head_sha = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", "HEAD"]))?;
     let head_sha = head_sha.trim().to_string();
 
-    let source_sha = match source {
-        Some(s) => {
+    // Resolve source SHAs (default to HEAD if none given)
+    let source_shas: Vec<String> = if sources.is_empty() {
+        vec![head_sha.clone()]
+    } else {
+        let mut shas = Vec::new();
+        for s in sources {
             let sha = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", s]))?;
-            sha.trim().to_string()
+            let sha = sha.trim().to_string();
+            // Silent dedup
+            if !shas.contains(&sha) {
+                shas.push(sha);
+            }
         }
-        None => head_sha.clone(),
+        shas
     };
 
-    if target_sha == source_sha {
-        anyhow::bail!("target and source are the same commit");
+    // Validate: no source is the same as target
+    for sha in &source_shas {
+        if *sha == target_sha {
+            anyhow::bail!("target and source are the same commit");
+        }
     }
 
-    // Verify target is ancestor of source
-    let is_ancestor = Command::new("git")
-        .args(["merge-base", "--is-ancestor", &target_sha, &source_sha])
-        .status()
-        .context("failed to check ancestry")?;
-    if !is_ancestor.success() {
-        anyhow::bail!(
-            "commit {} is not an ancestor of {}",
-            &target_sha[..7.min(target_sha.len())],
-            &source_sha[..7.min(source_sha.len())]
-        );
-    }
-
-    // If source != HEAD, verify source is ancestor of HEAD
-    if source_sha != head_sha {
+    // Verify target is ancestor of each source
+    for sha in &source_shas {
         let is_ancestor = Command::new("git")
-            .args(["merge-base", "--is-ancestor", &source_sha, &head_sha])
+            .args(["merge-base", "--is-ancestor", &target_sha, sha])
             .status()
             .context("failed to check ancestry")?;
         if !is_ancestor.success() {
             anyhow::bail!(
-                "source commit {} is not an ancestor of HEAD",
-                &source_sha[..7.min(source_sha.len())]
+                "commit {} is not an ancestor of {}",
+                &target_sha[..7.min(target_sha.len())],
+                &sha[..7.min(sha.len())]
             );
         }
     }
 
-    // Check for merge commits in range
+    // Verify all non-HEAD sources are ancestors of HEAD
+    for sha in &source_shas {
+        if *sha != head_sha {
+            let is_ancestor = Command::new("git")
+                .args(["merge-base", "--is-ancestor", sha, &head_sha])
+                .status()
+                .context("failed to check ancestry")?;
+            if !is_ancestor.success() {
+                anyhow::bail!(
+                    "source commit {} is not an ancestor of HEAD",
+                    &sha[..7.min(sha.len())]
+                );
+            }
+        }
+    }
+
+    // Check for merge commits in the rebase range (target..HEAD)
     let merges = Command::new("git")
-        .args([
-            "rev-list",
-            "--merges",
-            &format!("{}..{}", target_sha, source_sha),
-        ])
+        .args(["rev-list", "--merges", &format!("{}..HEAD", target_sha)])
         .output()
         .context("failed to check for merge commits")?;
     if !String::from_utf8_lossy(&merges.stdout).trim().is_empty() {
         anyhow::bail!("range contains merge commits; fixup cannot proceed");
     }
 
-    if source_sha == head_sha {
-        // Source is HEAD: soft-reset to uncommit, then amend into target
+    // Fast path: single source that is HEAD
+    if source_shas.len() == 1 && source_shas[0] == head_sha {
         let output = Command::new("git")
             .args(["reset", "--soft", "HEAD~1"])
             .output()
@@ -959,7 +1014,7 @@ pub fn fixup(target: &str, source: Option<&str>) -> Result<()> {
         // Now staged changes contain the source commit's diff -- delegate to amend
         amend(&target_sha)?;
     } else {
-        // Source is not HEAD: use rebase with custom todo editor
+        // Rebase path: use custom todo editor to mark all sources as fixup
         let exe = std::env::current_exe().context("failed to get current executable path")?;
 
         // Check if target is root commit
@@ -969,10 +1024,15 @@ pub fn fixup(target: &str, source: Option<&str>) -> Result<()> {
             .map(|o| !o.status.success())
             .unwrap_or(false);
 
+        // Build editor command with repeated --source flags
+        let source_args: String = source_shas
+            .iter()
+            .map(|s| format!(" --source {}", s))
+            .collect();
         let editor = format!(
-            "{} _edit-todo --source {} --target {}",
+            "{} _edit-todo{} --target {}",
             exe.display(),
-            source_sha,
+            source_args,
             target_sha
         );
 

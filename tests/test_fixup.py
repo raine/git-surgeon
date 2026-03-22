@@ -190,3 +190,94 @@ def test_fixup_root_commit(git_agent_exe, repo):
     )
     show = run_git(repo, "show", "--stat", new_root_sha)
     assert "root_extra.txt" in show.stdout
+
+
+def test_fixup_multiple_from(git_agent_exe, repo):
+    """Fold multiple non-HEAD commits into a target in one pass."""
+    create_file(repo, "a.txt", "aaa\n")
+    target_sha = _commit_sha(repo)
+
+    # Interleave fix commits with unrelated commits
+    modify_file(repo, "a.txt", "aaa fix1\n")
+    run_git(repo, "add", "a.txt")
+    run_git(repo, "commit", "-m", "fix1 a.txt")
+    fix1_sha = _commit_sha(repo)
+
+    create_file(repo, "b.txt", "bbb\n")  # unrelated
+
+    modify_file(repo, "a.txt", "aaa fix1 fix2\n")
+    run_git(repo, "add", "a.txt")
+    run_git(repo, "commit", "-m", "fix2 a.txt")
+    fix2_sha = _commit_sha(repo)
+
+    create_file(repo, "c.txt", "ccc\n")  # unrelated
+
+    modify_file(repo, "a.txt", "aaa fix1 fix2 fix3\n")
+    run_git(repo, "add", "a.txt")
+    run_git(repo, "commit", "-m", "fix3 a.txt")
+    fix3_sha = _commit_sha(repo)
+
+    create_file(repo, "d.txt", "ddd\n")  # unrelated, HEAD
+
+    result = run_git_agent(
+        git_agent_exe, repo, "fixup", target_sha,
+        "--from", fix1_sha, fix2_sha, fix3_sha
+    )
+    assert result.returncode == 0
+
+    subjects = _commit_subjects(repo)
+    # All three fix commits should be gone
+    assert "fix1 a.txt" not in subjects
+    assert "fix2 a.txt" not in subjects
+    assert "fix3 a.txt" not in subjects
+    # Unrelated commits should be preserved
+    assert "add a.txt" in subjects
+    assert "add b.txt" in subjects
+    assert "add c.txt" in subjects
+    assert "add d.txt" in subjects
+
+    # Target commit should contain all fixes
+    for line in run_git(repo, "log", "--all", "--format=%H %s").stdout.strip().split("\n"):
+        if "add a.txt" in line:
+            sha = line.split()[0]
+            break
+    show = run_git(repo, "show", sha)
+    assert "aaa fix1 fix2 fix3" in show.stdout
+
+
+def test_fixup_multiple_from_preserves_dirty_worktree(git_agent_exe, repo):
+    """Multi-source fixup should autostash and restore dirty working tree."""
+    create_file(repo, "a.txt", "aaa\n")
+    target_sha = _commit_sha(repo)
+
+    modify_file(repo, "a.txt", "aaa fix1\n")
+    run_git(repo, "add", "a.txt")
+    run_git(repo, "commit", "-m", "fix1 a.txt")
+    fix1_sha = _commit_sha(repo)
+
+    create_file(repo, "b.txt", "bbb\n")
+
+    modify_file(repo, "a.txt", "aaa fix1 fix2\n")
+    run_git(repo, "add", "a.txt")
+    run_git(repo, "commit", "-m", "fix2 a.txt")
+    fix2_sha = _commit_sha(repo)
+
+    create_file(repo, "c.txt", "ccc\n")
+
+    # Make working tree dirty
+    modify_file(repo, "b.txt", "bbb modified\n")
+
+    result = run_git_agent(
+        git_agent_exe, repo, "fixup", target_sha,
+        "--from", fix1_sha, fix2_sha
+    )
+    assert result.returncode == 0
+
+    # Dirty file should be restored
+    assert (repo / "b.txt").read_text() == "bbb modified\n"
+
+    subjects = _commit_subjects(repo)
+    assert "fix1 a.txt" not in subjects
+    assert "fix2 a.txt" not in subjects
+    assert "add b.txt" in subjects
+    assert "add c.txt" in subjects

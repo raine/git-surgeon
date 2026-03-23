@@ -16,6 +16,9 @@ interactive prompts. Stage, unstage, or discard individual hunks. Commit hunks
 directly with line-range precision. Restructure history by splitting commits or
 folding fixes into earlier ones.
 
+Check out [jj-hunk-tool](https://github.com/mvzink/jj-hunk-tool) if you're
+using [Jujutsu](https://github.com/jj-vcs/jj).
+
 ## Why?
 
 AI agents can't use interactive git commands like `git add -p`. When asked to

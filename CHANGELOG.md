@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.1.14 (2026-03-23)
+
+- Expose `diff`, `hunk_id`, and `patch` modules as a library crate so
+  git-surgeon can be used as a Rust dependency
+  ([#1](https://github.com/raine/git-surgeon/pull/1))
+
 ## v0.1.13 (2026-03-22)
 
 - Support folding multiple commits in a single `fixup` pass

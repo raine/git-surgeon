@@ -703,3 +703,5 @@ after the fact using `split`:
   parallel AI agent workflows
 - [claude-history](https://github.com/raine/claude-history) — Search and view
   Claude Code conversation history with fzf
+- [tmux-agent-usage](https://github.com/raine/tmux-agent-usage) — Display AI agent
+  rate limit usage in your tmux status bar

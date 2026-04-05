@@ -57,14 +57,19 @@ With git-surgeon, the agent can inspect hunks and commit them selectively:
 ⏺ Bash(git-surgeon commit 4eefac8 bbba931 -m "add logging for attribute prompts")
 ```
 
-**Highlights**
+**What agents can do with git-surgeon**
 
-- Stage specific lines from a hunk, not just whole hunks
+- Stage, unstage, or discard individual hunks by ID
+- Commit selected hunks in one step
+- Stage specific lines within a hunk, not just whole hunks
   ([example](#splitting-a-hunk-across-commits))
 - Split commits that mix concerns into focused commits
-  ([example](#splitting-a-commit-that-mixes-concerns))
-- Retroactively split a combined commit into separate changes
-  ([example](#splitting-a-commit-retroactively))
+  ([example](#splitting-a-commit-that-mixes-concerns)),
+  even retroactively ([example](#splitting-a-commit-retroactively))
+- Fold fix commits into earlier commits (fixup/amend)
+- Squash, reword, and reorder commits
+- Selectively undo hunks from previous commits
+- Commit to another branch without checking it out
 
 ## Quick start
 

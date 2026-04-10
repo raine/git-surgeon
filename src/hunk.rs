@@ -735,6 +735,26 @@ pub fn edit_todo(file: &str, sources: &[String], target: &str, mode: &str) -> Re
                 lines.insert(target_idx + 1 + j, line);
             }
         }
+        "edit-mark" => {
+            // Change "pick <target>" to "edit <target>" in the todo
+            let mut found = false;
+            for line in &mut lines {
+                let trimmed = line.trim().to_string();
+                if !trimmed.starts_with('#')
+                    && let Some(sha) = trimmed.split_whitespace().nth(1)
+                    && (sha.starts_with(target_short) || target.starts_with(sha))
+                {
+                    if let Some(rest) = line.strip_prefix("pick ") {
+                        *line = format!("edit {}", rest);
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if !found {
+                anyhow::bail!("target commit {} not found in todo", target_short);
+            }
+        }
         "move" | "move-before" => {
             if sources.len() != 1 {
                 anyhow::bail!("move mode requires exactly one source commit");
@@ -882,10 +902,11 @@ pub fn move_commit(
     };
 
     let exe = std::env::current_exe().context("failed to get current executable path")?;
+    let exe = exe.to_string_lossy().replace('\\', "/");
 
     let editor = format!(
         "{} _edit-todo --source {} --target {} --mode {}",
-        exe.display(),
+        exe,
         source_sha,
         editor_target,
         editor_mode
@@ -1022,6 +1043,7 @@ pub fn fixup(target: &str, sources: &[String]) -> Result<()> {
     } else {
         // Rebase path: use custom todo editor to mark all sources as fixup
         let exe = std::env::current_exe().context("failed to get current executable path")?;
+        let exe = exe.to_string_lossy().replace('\\', "/");
 
         // Check if target is root commit
         let is_root = Command::new("git")
@@ -1037,7 +1059,7 @@ pub fn fixup(target: &str, sources: &[String]) -> Result<()> {
             .collect();
         let editor = format!(
             "{} _edit-todo{} --target {}",
-            exe.display(),
+            exe,
             source_args,
             target_sha
         );
@@ -1707,9 +1729,13 @@ fn start_rebase_at_commit(target_sha: &str) -> Result<()> {
         .unwrap_or(false);
 
     // We need a custom sequence editor that marks the target commit as "edit"
-    let short_sha = &target_sha[..7.min(target_sha.len())];
-    // Use sed to change "pick <sha>" to "edit <sha>" for the target commit
-    let sed_script = format!("s/^pick {} /edit {} /", short_sha, short_sha);
+    let exe = std::env::current_exe().context("failed to determine current executable")?;
+    let exe = exe.to_string_lossy().replace('\\', "/");
+    let editor = format!(
+        "{} _edit-todo --target {} --mode edit-mark",
+        exe,
+        target_sha
+    );
 
     let mut rebase_cmd = Command::new("git");
     rebase_cmd.args(["rebase", "-i", "--autostash"]);
@@ -1718,10 +1744,7 @@ fn start_rebase_at_commit(target_sha: &str) -> Result<()> {
     } else {
         rebase_cmd.arg(format!("{}~1", target_sha));
     }
-    rebase_cmd.env(
-        "GIT_SEQUENCE_EDITOR",
-        format!("sed -i.bak '{}'", sed_script),
-    );
+    rebase_cmd.env("GIT_SEQUENCE_EDITOR", &editor);
 
     let output = rebase_cmd.output().context("failed to start rebase")?;
     if !output.status.success() {

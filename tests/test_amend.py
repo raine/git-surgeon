@@ -71,9 +71,15 @@ def test_amend_earlier_commit(git_agent_exe, repo):
 
 
 def test_amend_no_staged_changes(git_agent_exe, repo):
-    result = run_git_agent(git_agent_exe, repo, "amend", "HEAD")
+    create_file(repo, "a.txt", "aaa\n")
+    target_sha = _commit_sha(repo)
+    create_file(repo, "b.txt", "bbb\n")
+
+    result = run_git_agent(git_agent_exe, repo, "amend", target_sha)
+
     assert result.returncode != 0
     assert "no staged changes" in result.stderr
+    assert f"git-surgeon fold {target_sha}" in result.stderr
 
 
 def test_amend_preserves_unstaged_changes(git_agent_exe, repo):

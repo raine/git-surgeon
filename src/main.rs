@@ -79,8 +79,8 @@ enum Commands {
         #[arg(long, value_parser = parse_line_range)]
         lines: Option<(usize, usize)>,
     },
-    /// Fold a commit into an earlier commit (default: HEAD into target)
-    Fixup {
+    /// Fold one or more commits into an earlier commit (default: fold HEAD into the target)
+    Fold {
         /// Target commit to fold changes into
         target: String,
         /// Source commit(s) to fold (defaults to HEAD). Multiple values fold all into target in one pass.
@@ -107,7 +107,7 @@ enum Commands {
         #[arg(long, group = "position")]
         to_end: bool,
     },
-    /// Hidden: rewrite rebase todo for fixup or move
+    /// Hidden: rewrite rebase todo for fold or move
     #[command(name = "_edit-todo", hide = true)]
     EditTodo {
         /// Path to the rebase todo file
@@ -118,7 +118,7 @@ enum Commands {
         /// Target commit SHA
         #[arg(long)]
         target: String,
-        /// Rewrite mode: fixup (default) or move
+        /// Rewrite mode: fixup (default Git todo action) or move
         #[arg(long, default_value = "fixup")]
         mode: String,
     },
@@ -373,7 +373,7 @@ fn main() -> Result<()> {
             ids,
             message,
         } => hunk::commit_to_hunks(&branch, &ids, &message.join("\n\n"))?,
-        Commands::Fixup { target, from } => hunk::fixup(&target, &from)?,
+        Commands::Fold { target, from } => hunk::fold(&target, &from)?,
         Commands::Amend { commit } => hunk::amend(&commit)?,
         Commands::Move {
             commit,

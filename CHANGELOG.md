@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Rename `fixup` to `fold` for folding existing commits into earlier commits.
+  Use `amend` when folding staged changes into an earlier commit.
+- Refuse `fold` when the index already has staged changes so staged work cannot
+  be swept into a history rewrite by accident.
+
 ## v0.1.14 (2026-03-23)
 
 - Expose `diff`, `hunk_id`, and `patch` modules as a library crate so

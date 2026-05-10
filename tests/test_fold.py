@@ -1,4 +1,4 @@
-"""Tests for the fixup command (fold a commit into an earlier commit)."""
+"""Tests for the fold command (fold a commit into an earlier commit)."""
 
 from conftest import run_git_agent, run_git, create_file, modify_file
 
@@ -14,7 +14,7 @@ def _commit_subjects(repo):
     return [s for s in result.stdout.strip().split("\n") if s]
 
 
-def test_fixup_head_into_earlier(git_agent_exe, repo):
+def test_fold_head_into_earlier(git_agent_exe, repo):
     """Fold HEAD into an earlier commit, preserving intermediate commits."""
     create_file(repo, "a.txt", "aaa\n")
     target_sha = _commit_sha(repo)
@@ -27,7 +27,7 @@ def test_fixup_head_into_earlier(git_agent_exe, repo):
     run_git(repo, "add", "a.txt")
     run_git(repo, "commit", "-m", "fix a.txt")
 
-    result = run_git_agent(git_agent_exe, repo, "fixup", target_sha)
+    result = run_git_agent(git_agent_exe, repo, "fold", target_sha)
     assert result.returncode == 0
 
     # Intermediate commits should still exist
@@ -48,7 +48,7 @@ def test_fixup_head_into_earlier(git_agent_exe, repo):
     assert "aaa fixed" in show.stdout
 
 
-def test_fixup_with_from_flag(git_agent_exe, repo):
+def test_fold_with_from_flag(git_agent_exe, repo):
     """Fold a non-HEAD commit into an earlier commit using --from."""
     create_file(repo, "a.txt", "aaa\n")
     target_sha = _commit_sha(repo)
@@ -65,7 +65,7 @@ def test_fixup_with_from_flag(git_agent_exe, repo):
     create_file(repo, "c.txt", "ccc\n")
 
     result = run_git_agent(
-        git_agent_exe, repo, "fixup", target_sha, "--from", fix_sha
+        git_agent_exe, repo, "fold", target_sha, "--from", fix_sha
     )
     assert result.returncode == 0
 
@@ -76,7 +76,7 @@ def test_fixup_with_from_flag(git_agent_exe, repo):
     assert "fix a.txt" not in subjects
 
 
-def test_fixup_adjacent_commits(git_agent_exe, repo):
+def test_fold_adjacent_commits(git_agent_exe, repo):
     """Fold HEAD into the commit immediately before it (HEAD~1)."""
     create_file(repo, "a.txt", "aaa\n")
     create_file(repo, "b.txt", "bbb\n")
@@ -87,7 +87,7 @@ def test_fixup_adjacent_commits(git_agent_exe, repo):
     run_git(repo, "commit", "-m", "fix a.txt")
 
     target_sha = _commit_sha(repo, "HEAD~1")
-    result = run_git_agent(git_agent_exe, repo, "fixup", target_sha)
+    result = run_git_agent(git_agent_exe, repo, "fold", target_sha)
     assert result.returncode == 0
 
     subjects = _commit_subjects(repo)
@@ -95,17 +95,17 @@ def test_fixup_adjacent_commits(git_agent_exe, repo):
     assert "add b.txt" in subjects
 
 
-def test_fixup_same_commit_errors(git_agent_exe, repo):
-    """Fixup with target == source should error."""
+def test_fold_same_commit_errors(git_agent_exe, repo):
+    """Fold with target == source should error."""
     create_file(repo, "a.txt", "aaa\n")
 
-    result = run_git_agent(git_agent_exe, repo, "fixup", "HEAD")
+    result = run_git_agent(git_agent_exe, repo, "fold", "HEAD")
     assert result.returncode != 0
     assert "same commit" in result.stderr.lower()
 
 
-def test_fixup_not_ancestor_errors(git_agent_exe, repo):
-    """Fixup where target is not ancestor of source should error."""
+def test_fold_not_ancestor_errors(git_agent_exe, repo):
+    """Fold where target is not ancestor of source should error."""
     create_file(repo, "a.txt", "main\n")
     run_git(repo, "checkout", "-b", "other")
     create_file(repo, "b.txt", "other\n")
@@ -114,13 +114,13 @@ def test_fixup_not_ancestor_errors(git_agent_exe, repo):
     run_git(repo, "checkout", "main")
     create_file(repo, "c.txt", "main2\n")
 
-    result = run_git_agent(git_agent_exe, repo, "fixup", other_sha)
+    result = run_git_agent(git_agent_exe, repo, "fold", other_sha)
     assert result.returncode != 0
     assert "not an ancestor" in result.stderr.lower()
 
 
-def test_fixup_merge_commits_errors(git_agent_exe, repo):
-    """Fixup with merge commits in range should error."""
+def test_fold_merge_commits_errors(git_agent_exe, repo):
+    """Fold with merge commits in range should error."""
     create_file(repo, "a.txt", "main\n")
     target_sha = _commit_sha(repo)
 
@@ -136,13 +136,13 @@ def test_fixup_merge_commits_errors(git_agent_exe, repo):
     run_git(repo, "add", "a.txt")
     run_git(repo, "commit", "-m", "fix a.txt")
 
-    result = run_git_agent(git_agent_exe, repo, "fixup", target_sha)
+    result = run_git_agent(git_agent_exe, repo, "fold", target_sha)
     assert result.returncode != 0
     assert "merge" in result.stderr.lower()
 
 
-def test_fixup_preserves_dirty_worktree(git_agent_exe, repo):
-    """Fixup should autostash and restore dirty working tree."""
+def test_fold_preserves_dirty_worktree(git_agent_exe, repo):
+    """Fold should autostash and restore dirty working tree."""
     create_file(repo, "a.txt", "aaa\n")
     target_sha = _commit_sha(repo)
 
@@ -156,14 +156,57 @@ def test_fixup_preserves_dirty_worktree(git_agent_exe, repo):
     # Make working tree dirty
     modify_file(repo, "b.txt", "bbb modified\n")
 
-    result = run_git_agent(git_agent_exe, repo, "fixup", target_sha)
+    result = run_git_agent(git_agent_exe, repo, "fold", target_sha)
     assert result.returncode == 0
 
     # Dirty file should be restored
     assert (repo / "b.txt").read_text() == "bbb modified\n"
 
 
-def test_fixup_root_commit(git_agent_exe, repo):
+def test_fold_rejects_staged_changes(git_agent_exe, repo):
+    create_file(repo, "a.txt", "aaa\n")
+    target_sha = _commit_sha(repo)
+    create_file(repo, "b.txt", "bbb\n")
+    modify_file(repo, "a.txt", "aaa staged\n")
+    run_git(repo, "add", "a.txt")
+    old_head = _commit_sha(repo)
+
+    result = run_git_agent(git_agent_exe, repo, "fold", target_sha)
+
+    assert result.returncode != 0
+    assert "index has staged changes" in result.stderr
+    assert "git-surgeon amend" in result.stderr
+    assert _commit_sha(repo) == old_head
+    assert "aaa staged" in run_git(repo, "diff", "--cached").stdout
+
+
+def test_fold_explicit_head_rejects_staged_changes(git_agent_exe, repo):
+    create_file(repo, "a.txt", "aaa\n")
+    target_sha = _commit_sha(repo)
+    create_file(repo, "b.txt", "bbb\n")
+    modify_file(repo, "a.txt", "aaa staged\n")
+    run_git(repo, "add", "a.txt")
+    old_head = _commit_sha(repo)
+
+    result = run_git_agent(git_agent_exe, repo, "fold", target_sha, "--from", "HEAD")
+
+    assert result.returncode != 0
+    assert "index has staged changes" in result.stderr
+    assert _commit_sha(repo) == old_head
+    assert "aaa staged" in run_git(repo, "diff", "--cached").stdout
+
+
+def test_fixup_command_is_removed(git_agent_exe, repo):
+    create_file(repo, "a.txt", "aaa\n")
+    target_sha = _commit_sha(repo)
+
+    result = run_git_agent(git_agent_exe, repo, "fixup", target_sha)
+
+    assert result.returncode != 0
+    assert "unrecognized subcommand" in result.stderr.lower()
+
+
+def test_fold_root_commit(git_agent_exe, repo):
     """Fold HEAD into the root commit."""
     # The repo fixture creates a root commit with .gitkeep
     root_sha = (
@@ -177,7 +220,7 @@ def test_fixup_root_commit(git_agent_exe, repo):
     run_git(repo, "add", "root_extra.txt")
     run_git(repo, "commit", "-m", "fix root")
 
-    result = run_git_agent(git_agent_exe, repo, "fixup", root_sha)
+    result = run_git_agent(git_agent_exe, repo, "fold", root_sha)
     assert result.returncode == 0
 
     subjects = _commit_subjects(repo)
@@ -192,7 +235,7 @@ def test_fixup_root_commit(git_agent_exe, repo):
     assert "root_extra.txt" in show.stdout
 
 
-def test_fixup_multiple_from(git_agent_exe, repo):
+def test_fold_multiple_from(git_agent_exe, repo):
     """Fold multiple non-HEAD commits into a target in one pass."""
     create_file(repo, "a.txt", "aaa\n")
     target_sha = _commit_sha(repo)
@@ -220,7 +263,7 @@ def test_fixup_multiple_from(git_agent_exe, repo):
     create_file(repo, "d.txt", "ddd\n")  # unrelated, HEAD
 
     result = run_git_agent(
-        git_agent_exe, repo, "fixup", target_sha,
+        git_agent_exe, repo, "fold", target_sha,
         "--from", fix1_sha, fix2_sha, fix3_sha
     )
     assert result.returncode == 0
@@ -245,8 +288,8 @@ def test_fixup_multiple_from(git_agent_exe, repo):
     assert "aaa fix1 fix2 fix3" in show.stdout
 
 
-def test_fixup_multiple_from_preserves_dirty_worktree(git_agent_exe, repo):
-    """Multi-source fixup should autostash and restore dirty working tree."""
+def test_fold_multiple_from_preserves_dirty_worktree(git_agent_exe, repo):
+    """Multi-source fold should autostash and restore dirty working tree."""
     create_file(repo, "a.txt", "aaa\n")
     target_sha = _commit_sha(repo)
 
@@ -268,7 +311,7 @@ def test_fixup_multiple_from_preserves_dirty_worktree(git_agent_exe, repo):
     modify_file(repo, "b.txt", "bbb modified\n")
 
     result = run_git_agent(
-        git_agent_exe, repo, "fixup", target_sha,
+        git_agent_exe, repo, "fold", target_sha,
         "--from", fix1_sha, fix2_sha
     )
     assert result.returncode == 0

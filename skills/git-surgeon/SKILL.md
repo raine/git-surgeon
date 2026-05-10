@@ -1,6 +1,6 @@
 ---
 name: git-surgeon
-description: Non-interactive hunk-level git staging, unstaging, discarding, undoing, fixup, amend, squash, commit splitting, and commit reordering. Use when selectively staging, unstaging, discarding, reverting, squashing, splitting, or reordering individual diff hunks by ID instead of interactively.
+description: Non-interactive hunk-level git staging, unstaging, discarding, undoing, fold, amend, squash, commit splitting, and commit reordering. Use when selectively staging, unstaging, discarding, reverting, squashing, splitting, or reordering individual diff hunks by ID instead of interactively.
 ---
 
 # git-surgeon
@@ -60,10 +60,10 @@ git-surgeon unstage <id> --lines 5-30
 git-surgeon discard <id1> <id2> ...
 git-surgeon discard <id> --lines 5-30
 
-# Fold a commit into an earlier commit (default: HEAD into target)
-git-surgeon fixup <target>
-git-surgeon fixup <target> --from <commit>
-git-surgeon fixup <target> --from <commit1> <commit2> <commit3>
+# Fold existing commits into an earlier commit (default: HEAD into target)
+git-surgeon fold <target>
+git-surgeon fold <target> --from <commit>
+git-surgeon fold <target> --from <commit1> <commit2> <commit3>
 
 # Fold staged changes into an earlier commit
 git-surgeon amend <commit>
@@ -138,18 +138,27 @@ branch checked out elsewhere (e.g., main):
 3. The hunks are applied to the target branch's tree and discarded from the working tree
 4. Fails if the patch cannot be applied cleanly to the target branch
 
-## Folding fix commits into earlier commits
+## Picking the right folding command
 
-`fixup` folds one or more commits into an earlier one. The source(s) (default:
-HEAD) are removed from history and their changes merge into the target.
-Intermediate commits stay untouched. Dirty working tree is autostashed.
+| You have...                              | Use                                      |
+| ---------------------------------------- | ---------------------------------------- |
+| Staged changes                           | `git-surgeon amend <target>`             |
+| One existing commit, defaulting to HEAD  | `git-surgeon fold <target>`              |
+| One or more named commits                | `git-surgeon fold <target> --from <sha>` |
 
-- `git-surgeon fixup <target>` -- fold HEAD into target (most common)
-- `git-surgeon fixup <target> --from <commit>` -- fold a specific non-HEAD commit
-- `git-surgeon fixup <target> --from <c1> <c2> <c3>` -- fold multiple commits in one pass
+## Folding existing commits into earlier commits
+
+`fold` folds one or more existing commits into an earlier one. The source(s)
+(default: HEAD) are removed from history and their changes merge into the
+target. Intermediate commits stay untouched. Dirty working tree is autostashed.
+Refuses to run when the index already has staged changes.
+
+- `git-surgeon fold <target>` -- fold HEAD into target (most common)
+- `git-surgeon fold <target> --from <commit>` -- fold a specific non-HEAD commit
+- `git-surgeon fold <target> --from <c1> <c2> <c3>` -- fold multiple commits in one pass
 - Fails if the range contains merge commits
 
-### Using --blame to find the fixup target
+### Using --blame to find the fold target
 
 Use `--blame` to see which commit introduced the surrounding lines:
 
@@ -172,22 +181,24 @@ added. If your new lines belong with that change:
 
 ```bash
 git-surgeon commit a1b2c3d -m "add login logging"
-git-surgeon fixup 8922b52
+git-surgeon fold 8922b52
 ```
 
 ## Amending earlier commits with staged changes
 
 `amend` folds staged changes into an earlier commit. For HEAD, amends directly;
-for older commits, uses autosquash rebase. Unstaged changes are preserved.
+for older commits, uses autosquash rebase. Unstaged changes are preserved. For
+folding an existing commit instead, use `fold`.
 
 1. Stage desired hunks: `git-surgeon stage <id1> <id2>`
 2. Amend the target commit: `git-surgeon amend <commit-sha>`
 
 ## Squashing commits
 
-Squash collapses ALL commits from the target through HEAD into a single commit.
-Every intermediate commit in the range is merged. To fold one commit into a
-non-adjacent earlier commit without collapsing the range, use `fixup` instead.
+Squash collapses ALL commits from the target through HEAD into one, including
+any unrelated commits in that range. **Preview with `git log <target>..HEAD
+--oneline` first.** If the range is mixed, use `fold --from <c1> <c2> ...` to
+fold only named commits, or `move --to-end` the unrelated ones first.
 
 1. Squash commits from a target commit through HEAD: `git-surgeon squash HEAD~2 -m "combined"`
 2. Use multiple `-m` flags for subject + body: `git-surgeon squash HEAD~1 -m "Subject" -m "Body paragraph"`

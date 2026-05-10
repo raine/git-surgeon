@@ -66,7 +66,8 @@ With git-surgeon, the agent can inspect hunks and commit them selectively:
 - Split commits that mix concerns into focused commits
   ([example](#splitting-a-commit-that-mixes-concerns)),
   even retroactively ([example](#splitting-a-commit-retroactively))
-- Fold fix commits into earlier commits (fixup/amend)
+- Fold existing commits into earlier commits (`fold`)
+- Fold staged changes into earlier commits (`amend`)
 - Squash, reword, and reorder commits
 - Selectively undo hunks from previous commits
 - Commit to another branch without checking it out
@@ -122,7 +123,7 @@ to stage individual hunks instead of entire files.
 | [`commit-to`](#commit-to) | Commit hunks directly to another branch                |
 | [`unstage`](#unstage)     | Unstage hunks by ID                                    |
 | [`discard`](#discard)     | Discard working tree changes for hunks                 |
-| [`fixup`](#fixup)         | Fold a commit into an earlier commit                   |
+| [`fold`](#fold)           | Fold existing commits into an earlier commit           |
 | [`amend`](#amend)         | Fold staged changes into an earlier commit             |
 | [`reword`](#reword)       | Change the commit message of an existing commit        |
 | [`squash`](#squash)       | Squash multiple commits into one                       |
@@ -130,6 +131,14 @@ to stage individual hunks instead of entire files.
 | [`split`](#split)         | Split a commit into multiple commits by hunk selection |
 | [`move`](#move)           | Move a commit to a different position in history       |
 | [`update`](#update)       | Update git-surgeon to the latest version               |
+
+## Picking the right folding command
+
+| You have...                              | Use                                      |
+| ---------------------------------------- | ---------------------------------------- |
+| Staged changes                           | `git-surgeon amend <target>`             |
+| One existing commit, defaulting to HEAD  | `git-surgeon fold <target>`              |
+| One or more named commits                | `git-surgeon fold <target> --from <sha>` |
 
 ---
 
@@ -304,21 +313,23 @@ hunks.
 
 ---
 
-### `fixup`
+### `fold`
 
-Folds one or more commits into an earlier commit, removing the source commits
-from history and merging their changes into the target. Intermediate commits are
-preserved. By default, folds HEAD into the target.
+Folds one or more existing commits into an earlier commit, removing the source
+commits from history and merging their changes into the target. Intermediate
+commits are preserved. By default, folds HEAD into the target.
+
+For folding staged changes instead, use [`amend`](#amend).
 
 ```bash
 # Fold HEAD into an earlier commit
-git-surgeon fixup abc1234
+git-surgeon fold abc1234
 
 # Fold a specific commit (not HEAD) into an earlier one
-git-surgeon fixup abc1234 --from def5678
+git-surgeon fold abc1234 --from def5678
 
 # Fold multiple commits into one target in a single pass
-git-surgeon fixup abc1234 --from def5678 aaa1111 bbb2222
+git-surgeon fold abc1234 --from def5678 aaa1111 bbb2222
 ```
 
 Multiple `--from` values are folded in a single rebase, avoiding repeated
@@ -327,7 +338,8 @@ chronological order regardless of the order given on the command line.
 
 Uses a rebase internally. If a conflict occurs, the repo is left in the
 conflict state for manual resolution (`git rebase --continue` or
-`git rebase --abort`). Dirty working tree is autostashed and restored.
+`git rebase --abort`). Dirty working tree is autostashed and restored. Refuses
+to run when the index already has staged changes.
 
 ---
 
@@ -336,6 +348,8 @@ conflict state for manual resolution (`git rebase --continue` or
 Folds currently staged changes into an earlier commit. Uses `git commit --amend`
 for HEAD, or an autosquash rebase for older commits. Unstaged changes are
 preserved via `--autostash`.
+
+For folding an existing commit instead, use [`fold`](#fold).
 
 ```bash
 # Stage some hunks, then amend an earlier commit

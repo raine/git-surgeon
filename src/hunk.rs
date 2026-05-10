@@ -576,16 +576,29 @@ pub fn undo_files(files: &[String], commit: &str) -> Result<()> {
     Ok(())
 }
 
+fn has_staged_changes() -> Result<bool> {
+    let output = Command::new("git")
+        .args(["diff", "--cached", "--quiet"])
+        .output()
+        .context("failed to run git diff")?;
+
+    match output.status.code() {
+        Some(0) => Ok(false),
+        Some(1) => Ok(true),
+        _ => anyhow::bail!(
+            "git diff --cached failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ),
+    }
+}
+
 /// Fold currently staged changes into an earlier commit via autosquash rebase.
 /// If the target is HEAD, uses simple --amend instead.
 pub fn amend(commit: &str) -> Result<()> {
-    // Verify there are staged changes
-    let status = Command::new("git")
-        .args(["diff", "--cached", "--quiet"])
-        .status()
-        .context("failed to run git diff")?;
-    if status.success() {
-        anyhow::bail!("no staged changes to amend");
+    if !has_staged_changes()? {
+        anyhow::bail!(
+            "no staged changes to amend; to fold an existing commit, use `git-surgeon fold {commit}`"
+        );
     }
 
     // Check no rebase/cherry-pick in progress
@@ -932,8 +945,14 @@ pub fn move_commit(
 
 /// Fold one or more commits into an earlier commit.
 /// If sources is empty, defaults to HEAD.
-pub fn fixup(target: &str, sources: &[String]) -> Result<()> {
+pub fn fold(target: &str, sources: &[String]) -> Result<()> {
     check_no_rebase_in_progress()?;
+
+    if has_staged_changes()? {
+        anyhow::bail!(
+            "index has staged changes; `fold` folds existing commits, not staged changes. Use `git-surgeon amend {target}` to fold staged changes."
+        );
+    }
 
     // Resolve target SHA
     let target_sha = crate::diff::run_git_cmd(Command::new("git").args(["rev-parse", target]))?;
@@ -1002,7 +1021,7 @@ pub fn fixup(target: &str, sources: &[String]) -> Result<()> {
         .output()
         .context("failed to check for merge commits")?;
     if !String::from_utf8_lossy(&merges.stdout).trim().is_empty() {
-        anyhow::bail!("range contains merge commits; fixup cannot proceed");
+        anyhow::bail!("range contains merge commits; fold cannot proceed");
     }
 
     // Fast path: single source that is HEAD
@@ -1055,7 +1074,7 @@ pub fn fixup(target: &str, sources: &[String]) -> Result<()> {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             eprintln!(
-                "error: rebase conflict while fixing up into {}",
+                "error: rebase conflict while folding into {}",
                 &target_sha[..7.min(target_sha.len())]
             );
             eprintln!("resolve conflicts and run: git rebase --continue");
@@ -1084,7 +1103,7 @@ pub fn fixup(target: &str, sources: &[String]) -> Result<()> {
                 &ref_spec,
             ]));
             if let Ok(info) = info {
-                eprintln!("fixed up {}", info.trim());
+                eprintln!("folded {}", info.trim());
             }
         }
     }

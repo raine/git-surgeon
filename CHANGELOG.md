@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.1.15 (2026-05-10)
 
 - Rename `fixup` to `fold` for folding existing commits into earlier commits.
   Use `amend` when folding staged changes into an earlier commit.

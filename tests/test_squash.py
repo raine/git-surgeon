@@ -57,6 +57,40 @@ def test_squash_three_commits(exe, repo):
     assert "all three" in log.stdout
 
 
+def test_squash_message_body_starting_with_hyphen(exe, repo):
+    write_file(repo, "a.txt", "first")
+    run_git(repo, "add", "a.txt")
+    run_git(repo, "commit", "-m", "first commit")
+
+    write_file(repo, "b.txt", "second")
+    run_git(repo, "add", "b.txt")
+    run_git(repo, "commit", "-m", "second commit")
+
+    result = run_git_agent(
+        exe, repo, "squash", "HEAD~1", "-m", "subject", "-m", "- body line"
+    )
+    assert result.returncode == 0, result.stderr
+
+    log = run_git(repo, "log", "-1", "--format=%B")
+    assert log.stdout.strip() == "subject\n\n- body line"
+
+
+def test_squash_subject_starting_with_hyphen(exe, repo):
+    write_file(repo, "a.txt", "first")
+    run_git(repo, "add", "a.txt")
+    run_git(repo, "commit", "-m", "first commit")
+
+    write_file(repo, "b.txt", "second")
+    run_git(repo, "add", "b.txt")
+    run_git(repo, "commit", "-m", "second commit")
+
+    result = run_git_agent(exe, repo, "squash", "HEAD~1", "-m", "- subject")
+    assert result.returncode == 0, result.stderr
+
+    log = run_git(repo, "log", "-1", "--format=%B")
+    assert log.stdout.strip() == "- subject"
+
+
 def test_squash_head_errors(exe, repo):
     """Squashing HEAD into itself should error."""
     write_file(repo, "a.txt", "content")

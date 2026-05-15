@@ -127,7 +127,7 @@ enum Commands {
         /// Target commit to reword
         commit: String,
         /// New commit message (multiple -m values are joined by blank lines)
-        #[arg(short, long, required = true, num_args = 1)]
+        #[arg(short, long, required = true, num_args = 1, allow_hyphen_values = true)]
         message: Vec<String>,
     },
     /// Stage hunks and commit in one step
@@ -135,7 +135,7 @@ enum Commands {
         /// Hunk IDs (optionally with :START-END range suffix)
         ids: Vec<String>,
         /// Commit message (multiple -m values are joined by blank lines, like git commit)
-        #[arg(short, long, required = true, num_args = 1)]
+        #[arg(short, long, required = true, num_args = 1, allow_hyphen_values = true)]
         message: Vec<String>,
     },
     /// Commit hunks directly to another branch without checking it out
@@ -145,7 +145,7 @@ enum Commands {
         /// Hunk IDs (optionally with :START-END range suffix)
         ids: Vec<String>,
         /// Commit message (multiple -m values are joined by blank lines, like git commit)
-        #[arg(short, long, required = true, num_args = 1)]
+        #[arg(short, long, required = true, num_args = 1, allow_hyphen_values = true)]
         message: Vec<String>,
     },
     /// Undo all changes to specific files from a commit
@@ -170,7 +170,7 @@ enum Commands {
         /// The oldest commit to include. All commits from here to HEAD are combined.
         commit: String,
         /// Commit message (required)
-        #[arg(short, long, required = true, num_args = 1)]
+        #[arg(short, long, required = true, num_args = 1, allow_hyphen_values = true)]
         message: Vec<String>,
         /// Force squash even if range contains merge commits (which will be flattened)
         #[arg(long)]

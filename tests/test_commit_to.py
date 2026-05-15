@@ -49,6 +49,46 @@ def test_commit_to_another_branch(git_agent_exe, repo):
     assert show.stdout.strip() == "modified"
 
 
+def test_commit_to_message_body_starting_with_hyphen(git_agent_exe, repo):
+    create_file(repo, "dash.txt", "original\n")
+    run_git(repo, "branch", "target")
+
+    modify_file(repo, "dash.txt", "modified\n")
+
+    ids = _get_hunk_ids(git_agent_exe, repo)
+    result = run_git_agent(
+        git_agent_exe,
+        repo,
+        "commit-to",
+        "target",
+        ids[0],
+        "-m",
+        "subject",
+        "-m",
+        "- body line",
+    )
+    assert result.returncode == 0, result.stderr
+
+    log = run_git(repo, "log", "target", "-1", "--format=%B")
+    assert log.stdout.strip() == "subject\n\n- body line"
+
+
+def test_commit_to_subject_starting_with_hyphen(git_agent_exe, repo):
+    create_file(repo, "dash-subject.txt", "original\n")
+    run_git(repo, "branch", "target")
+
+    modify_file(repo, "dash-subject.txt", "modified\n")
+
+    ids = _get_hunk_ids(git_agent_exe, repo)
+    result = run_git_agent(
+        git_agent_exe, repo, "commit-to", "target", ids[0], "-m", "- subject"
+    )
+    assert result.returncode == 0, result.stderr
+
+    log = run_git(repo, "log", "target", "-1", "--format=%B")
+    assert log.stdout.strip() == "- subject"
+
+
 def test_commit_to_with_inline_range(git_agent_exe, repo):
     """Commit partial hunk: selected lines go to target, unselected remain locally."""
     # Use a file where git produces interleaved -/+ pairs (single line change)

@@ -46,6 +46,28 @@ def test_reword_head_multiline(git_agent_exe, repo):
     assert "body paragraph" in msg
 
 
+def test_reword_message_body_starting_with_hyphen(git_agent_exe, repo):
+    create_file(repo, "f.txt", "content\n")
+
+    result = run_git_agent(
+        git_agent_exe, repo, "reword", "HEAD", "-m", "subject", "-m", "- body line"
+    )
+    assert result.returncode == 0, result.stderr
+
+    msg = _commit_message(repo)
+    assert msg == "subject\n\n- body line"
+
+
+def test_reword_subject_starting_with_hyphen(git_agent_exe, repo):
+    create_file(repo, "f.txt", "content\n")
+
+    result = run_git_agent(git_agent_exe, repo, "reword", "HEAD", "-m", "- subject")
+    assert result.returncode == 0, result.stderr
+
+    msg = _commit_message(repo)
+    assert msg == "- subject"
+
+
 def test_reword_earlier_commit(git_agent_exe, repo):
     create_file(repo, "a.txt", "aaa\n")
     target_sha = _commit_sha(repo)

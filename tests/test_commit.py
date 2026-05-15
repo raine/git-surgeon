@@ -81,6 +81,32 @@ def test_commit_multiple_m_flags(git_agent_exe, repo):
     assert "body text" in body
 
 
+def test_commit_message_body_starting_with_hyphen(git_agent_exe, repo):
+    create_file(repo, "dash.txt", "original\n")
+    modify_file(repo, "dash.txt", "modified\n")
+
+    ids = _get_hunk_ids(git_agent_exe, repo)
+    result = run_git_agent(
+        git_agent_exe, repo, "commit", ids[0], "-m", "subject", "-m", "- body line"
+    )
+    assert result.returncode == 0, result.stderr
+
+    log = run_git(repo, "log", "-1", "--format=%B")
+    assert log.stdout.strip() == "subject\n\n- body line"
+
+
+def test_commit_subject_starting_with_hyphen(git_agent_exe, repo):
+    create_file(repo, "dash-subject.txt", "original\n")
+    modify_file(repo, "dash-subject.txt", "modified\n")
+
+    ids = _get_hunk_ids(git_agent_exe, repo)
+    result = run_git_agent(git_agent_exe, repo, "commit", ids[0], "-m", "- subject")
+    assert result.returncode == 0, result.stderr
+
+    log = run_git(repo, "log", "-1", "--format=%B")
+    assert log.stdout.strip() == "- subject"
+
+
 def test_commit_invalid_id(git_agent_exe, repo):
     result = run_git_agent(git_agent_exe, repo, "commit", "invalid", "-m", "nope")
     assert result.returncode != 0

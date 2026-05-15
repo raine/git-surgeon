@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.16 (2026-05-15)
+
+- Accept commit messages that begin with a hyphen when using `reword`, `commit`,
+  `commit-to`, and `squash`.
+
 ## v0.1.15 (2026-05-10)
 
 - Rename `fixup` to `fold` for folding existing commits into earlier commits.

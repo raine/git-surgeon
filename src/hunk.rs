@@ -238,7 +238,7 @@ fn reject_inline_ranges(ids: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn print_confirmed_ids<'a>(ids: impl IntoIterator<Item = &'a String>) {
+fn print_confirmed_ids(ids: impl IntoIterator<Item = impl std::fmt::Display>) {
     for id in ids {
         eprintln!("{}", id);
     }
@@ -429,7 +429,6 @@ pub fn commit_to_hunks(branch: &str, ids: &[String], message: &str) -> Result<()
     let tmp_index =
         std::path::PathBuf::from(git_dir).join(format!("surgeon-tmp-index-{}", std::process::id()));
 
-    // Ensure cleanup on all exit paths
     let result = commit_to_with_index(
         branch,
         &target_ref,
@@ -439,19 +438,19 @@ pub fn commit_to_hunks(branch: &str, ids: &[String], message: &str) -> Result<()
         &tmp_index,
     );
 
-    // Always clean up temp index
     let _ = std::fs::remove_file(&tmp_index);
 
-    // If the commit succeeded, discard from working tree
     match result {
-        Ok(()) => {
+        Ok(commit_sha) => {
+            let short_sha = &commit_sha[..7.min(commit_sha.len())];
             apply_patch(&discard_patch, &ApplyMode::Discard).with_context(|| {
                 format!(
-                    "committed to {} but failed to discard local hunks; \
+                    "committed to {} ({}) but failed to discard local hunks; \
                      the changes are still in your working tree",
-                    branch
+                    branch, short_sha
                 )
             })?;
+            eprintln!("committed to {}: {}", branch, short_sha);
             print_confirmed_ids(resolved.ids());
             Ok(())
         }
@@ -466,7 +465,7 @@ fn commit_to_with_index(
     patch: &str,
     message: &str,
     tmp_index: &std::path::Path,
-) -> Result<()> {
+) -> Result<String> {
     use std::io::Write;
     use std::process::Stdio;
 
@@ -529,7 +528,7 @@ fn commit_to_with_index(
         );
     }
 
-    Ok(())
+    Ok(commit_sha)
 }
 
 pub fn undo_hunks(ids: &[String], commit: &str, lines: Option<(usize, usize)>) -> Result<()> {
@@ -593,9 +592,7 @@ pub fn undo_files(files: &[String], commit: &str) -> Result<()> {
     }
 
     apply_patch(&combined_patch, &ApplyMode::Discard)?;
-    for file in files {
-        eprintln!("{}", file);
-    }
+    print_confirmed_ids(files);
     Ok(())
 }
 

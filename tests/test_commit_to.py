@@ -27,6 +27,7 @@ def test_commit_to_another_branch(git_agent_exe, repo):
 
     result = run_git_agent(git_agent_exe, repo, "commit-to", "target", ids[0], "-m", "cross-branch commit")
     assert result.returncode == 0, result.stderr
+    assert result.stderr.splitlines()[0].startswith("committed to target: ")
     assert ids[0] in result.stderr.splitlines()
 
     # Hunk should be discarded from working tree

@@ -24,6 +24,7 @@ def test_unstage_single_hunk(git_agent_exe, repo):
 
     result = run_git_agent(git_agent_exe, repo, "unstage", ids[0])
     assert result.returncode == 0
+    assert ids[0] in result.stderr.splitlines()
 
     # Now staged should be empty
     staged = run_git(repo, "diff", "--cached")

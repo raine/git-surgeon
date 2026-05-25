@@ -34,6 +34,7 @@ def test_undo_hunk_clean_tree(repo, git_agent_exe):
     # Undo it
     result = run_git_agent(git_agent_exe, repo, "undo", hunk_id, "--from", "HEAD")
     assert result.returncode == 0
+    assert hunk_id in result.stderr.splitlines()
 
     # Working tree should now have the reverse change
     diff = run_git(repo, "diff")

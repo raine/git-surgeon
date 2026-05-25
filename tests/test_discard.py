@@ -19,6 +19,7 @@ def test_discard_single_hunk(git_agent_exe, repo):
 
     result = run_git_agent(git_agent_exe, repo, "discard", ids[0])
     assert result.returncode == 0
+    assert ids[0] in result.stderr.splitlines()
 
     # File should be back to original
     content = (repo / "d.txt").read_text()

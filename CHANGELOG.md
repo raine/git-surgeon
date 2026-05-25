@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.17 (2026-05-25)
+
+- Print confirmed hunk IDs only after hunk operations succeed, so failed commits
+  no longer look like successful selections.
+
 ## v0.1.16 (2026-05-15)
 
 - Accept commit messages that begin with a hyphen when using `reword`, `commit`,

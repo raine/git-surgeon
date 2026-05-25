@@ -19,6 +19,7 @@ def test_commit_single_hunk(git_agent_exe, repo):
 
     result = run_git_agent(git_agent_exe, repo, "commit", ids[0], "-m", "test commit")
     assert result.returncode == 0
+    assert ids[0] in result.stderr.splitlines()
 
     # Change should be committed (no staged, no unstaged)
     staged = run_git(repo, "diff", "--cached")
@@ -110,6 +111,26 @@ def test_commit_subject_starting_with_hyphen(git_agent_exe, repo):
 def test_commit_invalid_id(git_agent_exe, repo):
     result = run_git_agent(git_agent_exe, repo, "commit", "invalid", "-m", "nope")
     assert result.returncode != 0
+
+
+def test_commit_failure_does_not_echo_matched_ids(git_agent_exe, repo):
+    create_file(repo, "hook.txt", "original\n")
+    modify_file(repo, "hook.txt", "modified\n")
+
+    ids = _get_hunk_ids(git_agent_exe, repo)
+    assert len(ids) == 1
+
+    hooks_dir = repo / ".git" / "hooks"
+    hook = hooks_dir / "pre-commit"
+    hook.write_text("#!/bin/sh\nexit 1\n")
+    hook.chmod(0o755)
+
+    result = run_git_agent(git_agent_exe, repo, "commit", ids[0], "-m", "blocked")
+    assert result.returncode != 0
+    assert ids[0] not in result.stderr.splitlines()
+
+    staged = run_git(repo, "diff", "--cached")
+    assert staged.stdout.strip() == ""
 
 
 def test_commit_rejects_dirty_index(git_agent_exe, repo):

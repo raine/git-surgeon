@@ -13,6 +13,7 @@ def test_undo_file_single(repo, git_agent_exe):
 
     result = run_git_agent(git_agent_exe, repo, "undo-file", "file.txt", "--from", "HEAD")
     assert result.returncode == 0
+    assert "file.txt" in result.stderr.splitlines()
 
     diff = run_git(repo, "diff")
     assert "+line1" in diff.stdout
@@ -54,6 +55,27 @@ def test_undo_file_not_in_commit(repo, git_agent_exe):
 
     result = run_git_agent(git_agent_exe, repo, "undo-file", "nonexistent.txt", "--from", "HEAD")
     assert result.returncode != 0
+
+
+def test_undo_file_atomic_failure_does_not_echo_matched_files(repo, git_agent_exe):
+    (repo / "a.txt").write_text("aaa\n")
+    (repo / "b.txt").write_text("bbb\n")
+    run_git(repo, "add", ".")
+    run_git(repo, "commit", "-m", "add files")
+
+    modify_file(repo, "a.txt", "AAA\n")
+    modify_file(repo, "b.txt", "BBB\n")
+    run_git(repo, "add", ".")
+    run_git(repo, "commit", "-m", "modify files")
+
+    result = run_git_agent(
+        git_agent_exe, repo, "undo-file", "a.txt", "missing.txt", "--from", "HEAD"
+    )
+    assert result.returncode != 0
+    assert "a.txt" not in result.stderr.splitlines()
+
+    diff = run_git(repo, "diff")
+    assert diff.stdout.strip() == ""
 
 
 def test_undo_file_deletion(repo, git_agent_exe):

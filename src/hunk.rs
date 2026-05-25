@@ -198,6 +198,8 @@ pub fn apply_hunks(ids: &[String], mode: ApplyMode, lines: Option<(usize, usize)
         anyhow::bail!("--lines requires exactly one hunk ID");
     }
 
+    reject_inline_ranges(ids)?;
+
     let staged = matches!(mode, ApplyMode::Unstage);
     let diff_output = crate::diff::run_git_diff(staged, None)?;
     let hunks = crate::diff::parse_diff(&diff_output);
@@ -219,11 +221,27 @@ pub fn apply_hunks(ids: &[String], mode: ApplyMode, lines: Option<(usize, usize)
             (*hunk).clone()
         };
         combined_patch.push_str(&build_patch(&patched_hunk));
-        eprintln!("{}", id);
     }
 
     apply_patch(&combined_patch, &mode)?;
+    print_confirmed_ids(ids);
     Ok(())
+}
+
+fn reject_inline_ranges(ids: &[String]) -> Result<()> {
+    if let Some(id) = ids.iter().find(|id| id.contains(':')) {
+        anyhow::bail!(
+            "inline ranges are not supported by this command: {}; use --lines START-END",
+            id
+        );
+    }
+    Ok(())
+}
+
+fn print_confirmed_ids<'a>(ids: impl IntoIterator<Item = &'a String>) {
+    for id in ids {
+        eprintln!("{}", id);
+    }
 }
 
 /// Parse an ID that may contain inline range suffixes.
@@ -282,6 +300,12 @@ struct ResolvedHunks<'a> {
     entries: Vec<HunkEntry<'a>>,
 }
 
+impl ResolvedHunks<'_> {
+    fn ids(&self) -> impl Iterator<Item = &String> {
+        self.entries.iter().map(|(id, _, _)| id)
+    }
+}
+
 /// Resolve hunk IDs against the current working tree diff.
 fn resolve_hunks<'a>(
     ids: &[String],
@@ -308,35 +332,33 @@ fn resolve_hunks<'a>(
 /// When `reverse` is true, slicing preserves context appropriate for discard/reverse-apply.
 fn build_combined_patch(resolved: &ResolvedHunks, reverse: bool) -> Result<String> {
     let mut combined_patch = String::new();
-    for (id, ranges, hunk) in &resolved.entries {
+    for (_, ranges, hunk) in &resolved.entries {
         let patched_hunk = if ranges.is_empty() {
             (*hunk).clone()
         } else {
             slice_hunk_multi(hunk, ranges, reverse)?
         };
         combined_patch.push_str(&build_patch(&patched_hunk));
-        if !reverse {
-            eprintln!("{}", id);
-        }
     }
     Ok(combined_patch)
 }
 
-/// Build a combined patch from the given hunk IDs (with optional inline ranges).
-/// Returns the patch string. Prints each matched hunk ID to stderr.
-fn build_patch_from_ids(ids: &[String]) -> Result<String> {
+/// Build a combined patch from the given hunk IDs with optional inline ranges.
+fn build_patch_from_ids(ids: &[String]) -> Result<(String, Vec<String>)> {
     let diff_output = crate::diff::run_git_diff(false, None)?;
     let hunks = crate::diff::parse_diff(&diff_output);
     let identified = assign_ids(&hunks);
     let resolved = resolve_hunks(ids, &identified)?;
-    build_combined_patch(&resolved, false)
+    let selected_ids = resolved.ids().cloned().collect();
+    let patch = build_combined_patch(&resolved, false)?;
+    Ok((patch, selected_ids))
 }
 
 /// Stage specified hunks and commit them. On commit failure, unstage to restore original state.
 pub fn commit_hunks(ids: &[String], message: &str) -> Result<()> {
     require_clean_index()?;
 
-    let combined_patch = build_patch_from_ids(ids)?;
+    let (combined_patch, selected_ids) = build_patch_from_ids(ids)?;
 
     // Stage the hunks
     apply_patch(&combined_patch, &ApplyMode::Stage)?;
@@ -356,6 +378,7 @@ pub fn commit_hunks(ids: &[String], message: &str) -> Result<()> {
         );
     }
 
+    print_confirmed_ids(&selected_ids);
     Ok(())
 }
 
@@ -429,6 +452,7 @@ pub fn commit_to_hunks(branch: &str, ids: &[String], message: &str) -> Result<()
                     branch
                 )
             })?;
+            print_confirmed_ids(resolved.ids());
             Ok(())
         }
         Err(e) => Err(e),
@@ -505,11 +529,6 @@ fn commit_to_with_index(
         );
     }
 
-    eprintln!(
-        "committed to {}: {}",
-        branch,
-        &commit_sha[..7.min(commit_sha.len())]
-    );
     Ok(())
 }
 
@@ -517,6 +536,8 @@ pub fn undo_hunks(ids: &[String], commit: &str, lines: Option<(usize, usize)>) -
     if lines.is_some() && ids.len() != 1 {
         anyhow::bail!("--lines requires exactly one hunk ID");
     }
+
+    reject_inline_ranges(ids)?;
 
     let diff_output = crate::diff::run_git_diff_commit(commit, None)?;
     let hunks = crate::diff::parse_diff(&diff_output);
@@ -537,10 +558,10 @@ pub fn undo_hunks(ids: &[String], commit: &str, lines: Option<(usize, usize)>) -
             (*hunk).clone()
         };
         combined_patch.push_str(&build_patch(&patched_hunk));
-        eprintln!("{}", id);
     }
 
     apply_patch(&combined_patch, &ApplyMode::Discard)?;
+    print_confirmed_ids(ids);
     Ok(())
 }
 
@@ -569,10 +590,12 @@ pub fn undo_files(files: &[String], commit: &str) -> Result<()> {
         if !matched_files.contains(&file) {
             anyhow::bail!("file {} not found in commit {}", file, commit);
         }
-        eprintln!("{}", file);
     }
 
     apply_patch(&combined_patch, &ApplyMode::Discard)?;
+    for file in files {
+        eprintln!("{}", file);
+    }
     Ok(())
 }
 

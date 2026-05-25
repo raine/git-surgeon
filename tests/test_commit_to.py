@@ -27,6 +27,7 @@ def test_commit_to_another_branch(git_agent_exe, repo):
 
     result = run_git_agent(git_agent_exe, repo, "commit-to", "target", ids[0], "-m", "cross-branch commit")
     assert result.returncode == 0, result.stderr
+    assert ids[0] in result.stderr.splitlines()
 
     # Hunk should be discarded from working tree
     unstaged = run_git(repo, "diff")
@@ -241,6 +242,7 @@ def test_commit_to_conflict_aborts_safely(git_agent_exe, repo):
     ids = _get_hunk_ids(git_agent_exe, repo)
     result = run_git_agent(git_agent_exe, repo, "commit-to", "target", ids[0], "-m", "will fail")
     assert result.returncode != 0
+    assert ids[0] not in result.stderr.splitlines()
 
     # Target branch HEAD should not have moved
     target_sha_after = run_git(repo, "rev-parse", "target").stdout.strip()

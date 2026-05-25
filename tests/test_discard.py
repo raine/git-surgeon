@@ -45,3 +45,37 @@ def test_discard_one_of_two_hunks(git_agent_exe, repo):
     # Should still have changes (the other hunk)
     diff = run_git(repo, "diff")
     assert diff.stdout.strip() != ""
+
+
+def test_discard_atomic_failure_does_not_echo_matched_ids(git_agent_exe, repo):
+    content = "a\n" + "mid\n" * 20 + "z\n"
+    create_file(repo, "atomic.txt", content)
+    modify_file(repo, "atomic.txt", "a1\n" + "mid\n" * 20 + "z1\n")
+
+    ids = _get_hunk_ids(git_agent_exe, repo)
+    assert len(ids) >= 2
+
+    result = run_git_agent(git_agent_exe, repo, "discard", ids[0], "invalid")
+    assert result.returncode != 0
+    assert ids[0] not in result.stderr.splitlines()
+    assert "not found" in result.stderr
+
+    diff = run_git(repo, "diff")
+    assert "a1" in diff.stdout
+    assert "z1" in diff.stdout
+
+
+def test_discard_inline_range_has_targeted_error(git_agent_exe, repo):
+    create_file(repo, "inline.txt", "original\n")
+    modify_file(repo, "inline.txt", "modified\n")
+
+    ids = _get_hunk_ids(git_agent_exe, repo)
+    assert len(ids) == 1
+
+    result = run_git_agent(git_agent_exe, repo, "discard", f"{ids[0]}:1-2")
+    assert result.returncode != 0
+    assert "inline ranges are not supported" in result.stderr
+    assert "--lines" in result.stderr
+
+    diff = run_git(repo, "diff")
+    assert "modified" in diff.stdout

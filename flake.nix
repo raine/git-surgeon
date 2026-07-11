@@ -17,15 +17,29 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in
         {
-          default = pkgs.rustPlatform.buildRustPackage {
+          default = pkgs.stdenv.mkDerivation {
             pname = cargoToml.package.name;
             version = cargoToml.package.version;
 
             src = ./.;
 
-            cargoHash = pkgs.lib.fakeHash;
+            nativeBuildInputs = with pkgs; [
+              cargo
+              rustc
+            ];
 
-            doCheck = false;
+            buildPhase = ''
+              runHook preBuild
+              export CARGO_HOME="$TMPDIR/cargo-home"
+              cargo build --release --locked
+              runHook postBuild
+            '';
+
+            installPhase = ''
+              runHook preInstall
+              install -Dm755 target/release/git-surgeon "$out/bin/git-surgeon"
+              runHook postInstall
+            '';
 
             meta = with pkgs.lib; {
               description = "Surgical git hunk control for AI agents";

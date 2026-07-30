@@ -716,6 +716,37 @@ after the fact using `split`:
 - Git 2.0+
 - Rust (for building from source)
 
+## Windows support
+
+git-surgeon compiles and runs on Windows. All commands work except `update`, which
+is gated behind CI release artifacts that don't yet include Windows targets.
+
+The following changes were needed for Windows compatibility:
+
+- **`sed` removed from `split`**: The `split` command previously used `sed -i.bak`
+  as a `GIT_SEQUENCE_EDITOR` to mark commits for editing during rebase. On Windows,
+  `sed` is not available. Replaced with the existing `_edit-todo` self-invocation
+  pattern (a new `edit-mark` mode in `edit_todo()`), eliminating the shell
+  dependency entirely. This also fixes `move` and `fixup` on Windows, which use
+  the same `_edit-todo` mechanism and had a latent bug: Windows backslash paths in
+  `GIT_SEQUENCE_EDITOR` were mangled by Git for Windows' `/bin/sh`. Fixed by
+  normalizing paths to forward slashes.
+
+- **Unix-only `chmod` guarded**: `std::os::unix::fs::PermissionsExt` and
+  `from_mode(0o755)` in the binary replacement logic are now behind `#[cfg(unix)]`.
+  Windows determines executability by file extension, not permission bits.
+
+- **SHA-256 checksum on Windows**: The checksum verification in `update` uses
+  `sha256sum` (Linux) / `shasum` (macOS). Neither exists on Windows. Added a
+  `certutil -hashfile` path for Windows (built into the OS).
+
+- **Cache directory**: The update cache path was hardcoded to `~/.cache/`, which
+  is not conventional on Windows. Switched to `dirs::cache_dir()`, which returns
+  `%LOCALAPPDATA%` on Windows and `~/.cache` on Unix.
+
+- **Platform targets**: Added `windows-amd64` and `windows-arm64` to the release
+  artifact suffix mapping.
+
 ## Related projects
 
 - [workmux](https://github.com/raine/workmux) — Git worktrees + tmux windows for

@@ -16,6 +16,8 @@ fn platform_suffix() -> Result<&'static str> {
         ("macos", "x86_64") => Ok("darwin-amd64"),
         ("linux", "x86_64") => Ok("linux-amd64"),
         ("linux", "aarch64") => Ok("linux-arm64"),
+        ("windows", "x86_64") => Ok("windows-amd64"),
+        ("windows", "aarch64") => Ok("windows-arm64"),
         (os, arch) => bail!("Unsupported platform: {os}/{arch}"),
     }
 }
@@ -84,32 +86,59 @@ fn extract_tar(archive: &std::path::Path, dest: &std::path::Path) -> Result<()> 
 
 /// Compute SHA-256 hash of a file using system tools.
 fn sha256_of(path: &std::path::Path) -> Result<String> {
-    // Try sha256sum first (common on Linux)
-    if let Ok(output) = Command::new("sha256sum").arg(path).output()
-        && output.status.success()
+    #[cfg(windows)]
     {
-        let out = String::from_utf8_lossy(&output.stdout);
-        if let Some(hash) = out.split_whitespace().next() {
-            return Ok(hash.to_string());
+        let output = Command::new("certutil")
+            .args(["-hashfile", &path.to_string_lossy(), "SHA256"])
+            .output()
+            .context("certutil not found. Cannot verify checksum.")?;
+
+        if !output.status.success() {
+            bail!("Checksum command failed");
         }
+
+        let out = String::from_utf8_lossy(&output.stdout);
+        // certutil output format:
+        //   SHA256 Hash of file <path>:
+        //   <hash bytes with spaces>
+        //   CertUtil: -hashfile command completed successfully.
+        let hash_line = out.lines().nth(1).context("Could not parse certutil output")?;
+        let hash = hash_line.split_whitespace().collect::<Vec<_>>().join("");
+        if hash.is_empty() {
+            anyhow::bail!("Could not parse checksum output");
+        }
+        return Ok(hash);
     }
 
-    // Fall back to shasum -a 256 (macOS)
-    let output = Command::new("shasum")
-        .args(["-a", "256"])
-        .arg(path)
-        .output()
-        .context("Neither sha256sum nor shasum found. Cannot verify checksum.")?;
+    #[cfg(not(windows))]
+    {
+        // Try sha256sum first (common on Linux)
+        if let Ok(output) = Command::new("sha256sum").arg(path).output()
+            && output.status.success()
+        {
+            let out = String::from_utf8_lossy(&output.stdout);
+            if let Some(hash) = out.split_whitespace().next() {
+                return Ok(hash.to_string());
+            }
+        }
 
-    if !output.status.success() {
-        bail!("Checksum command failed");
+        // Fall back to shasum -a 256 (macOS)
+        let output = Command::new("shasum")
+            .args(["-a", "256"])
+            .arg(path)
+            .output()
+            .context("Neither sha256sum nor shasum found. Cannot verify checksum.")?;
+
+        if !output.status.success() {
+            bail!("Checksum command failed");
+        }
+
+        let out = String::from_utf8_lossy(&output.stdout);
+        out.split_whitespace()
+            .next()
+            .map(|s| s.to_string())
+            .context("Could not parse checksum output")
     }
-
-    let out = String::from_utf8_lossy(&output.stdout);
-    out.split_whitespace()
-        .next()
-        .map(|s| s.to_string())
-        .context("Could not parse checksum output")
 }
 
 /// Verify SHA-256 checksum of a file against the expected checksum line.
@@ -129,8 +158,6 @@ fn verify_checksum(file: &std::path::Path, expected_line: &str) -> Result<()> {
 
 /// Replace the current binary with the new one, with rollback on failure.
 fn replace_binary(new_binary: &std::path::Path, current_exe: &std::path::Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-
     let exe_dir = current_exe
         .parent()
         .context("Could not determine binary directory")?;
@@ -138,7 +165,12 @@ fn replace_binary(new_binary: &std::path::Path, current_exe: &std::path::Path) -
     // Copy to destination directory to avoid EXDEV (cross-device rename)
     let staged = exe_dir.join(format!(".{BINARY_NAME}.new"));
     std::fs::copy(new_binary, &staged).context("Failed to copy new binary to install directory")?;
-    std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755))?;
+    }
 
     // Rename current -> .old, then staged -> current
     let backup = exe_dir.join(format!(".{BINARY_NAME}.old"));
@@ -199,6 +231,12 @@ fn do_update(
 }
 
 pub fn run() -> Result<()> {
+    #[cfg(windows)]
+    bail!(
+        "Self-update is not yet supported on Windows. \
+         Download the latest release from https://github.com/{REPO}/releases/latest"
+    );
+
     let current_exe =
         std::env::current_exe().context("Could not determine current executable path")?;
 
@@ -243,8 +281,7 @@ struct UpdateCache {
 }
 
 fn update_cache_path() -> Option<std::path::PathBuf> {
-    let home = dirs::home_dir()?;
-    let dir = home.join(".cache").join(BINARY_NAME);
+    let dir = dirs::cache_dir()?.join(BINARY_NAME);
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir.join("update_check.json"))
 }
@@ -400,7 +437,7 @@ mod tests {
     #[test]
     fn test_platform_suffix_current() {
         let suffix = platform_suffix().unwrap();
-        assert!(["darwin-arm64", "darwin-amd64", "linux-amd64", "linux-arm64"].contains(&suffix));
+        assert!(["darwin-arm64", "darwin-amd64", "linux-amd64", "linux-arm64", "windows-amd64", "windows-arm64"].contains(&suffix));
     }
 
     #[test]

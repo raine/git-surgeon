@@ -1,5 +1,8 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap::Parser;
+use serde::Serialize;
+use std::io::{self, Write};
+use std::path::PathBuf;
 
 pub use git_surgeon::{diff, hunk_id, patch};
 
@@ -12,8 +15,40 @@ mod update;
 #[command(name = "git-surgeon", version)]
 #[command(about = "Non-interactive hunk-level git staging for AI agents")]
 struct Cli {
+    /// Emit structured JSON (supported by skill and version commands)
+    #[arg(long, global = true)]
+    json: bool,
+
     #[command(subcommand)]
     command: Commands,
+}
+
+#[derive(clap::Subcommand)]
+enum SkillCommands {
+    /// List skills embedded in this binary
+    List,
+    /// Print an embedded skill byte-for-byte
+    Print { name: String },
+    /// Show an embedded skill byte-for-byte
+    Show { name: String },
+    /// Install an embedded skill for an AI coding assistant
+    Install {
+        /// Skill name (defaults to git-surgeon)
+        #[arg(default_value = skill::SKILL_NAME)]
+        name: String,
+        /// Runtime target
+        #[arg(long, value_enum, default_value = "claude")]
+        target: skill::Platform,
+        /// Home/root under which the runtime-specific layout is created
+        #[arg(long)]
+        target_root: Option<PathBuf>,
+        /// Validate and report planned writes without changing the filesystem
+        #[arg(long)]
+        dry_run: bool,
+        /// Replace an unmanaged, modified, or newer destination file
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 #[derive(clap::Subcommand)]
@@ -179,6 +214,13 @@ enum Commands {
         #[arg(long)]
         no_preserve_author: bool,
     },
+    /// Show version, schema, build provenance, and embedded skill metadata
+    Version,
+    /// Discover, print, show, or install companion skills
+    Skill {
+        #[command(subcommand)]
+        command: SkillCommands,
+    },
     /// Update git-surgeon to the latest version
     Update,
     /// Hidden: background update check
@@ -189,12 +231,24 @@ enum Commands {
         /// Install for Claude Code (~/.claude/skills/)
         #[arg(long)]
         claude: bool,
+        /// Install for pi (~/.pi/agent/skills/)
+        #[arg(long)]
+        pi: bool,
         /// Install for OpenCode (~/.config/opencode/skills/)
         #[arg(long)]
         opencode: bool,
         /// Install for Codex (~/.codex/skills/)
         #[arg(long)]
         codex: bool,
+        /// Home/root under which the runtime-specific layouts are created
+        #[arg(long)]
+        target_root: Option<PathBuf>,
+        /// Validate and report planned writes without changing the filesystem
+        #[arg(long)]
+        dry_run: bool,
+        /// Replace an unmanaged, modified, or newer destination file
+        #[arg(long)]
+        force: bool,
     },
 }
 
@@ -343,11 +397,188 @@ fn parse_line_range(s: &str) -> Result<(usize, usize), String> {
     Ok((start, end))
 }
 
-fn main() -> Result<()> {
-    let cli = Cli::parse();
+fn resolve_target_root(value: Option<PathBuf>) -> Result<PathBuf> {
+    value.or_else(dirs::home_dir).ok_or_else(|| {
+        anyhow::anyhow!("could not determine target root; pass --target-root <PATH>")
+    })
+}
 
-    // Show update notification on non-update commands
-    if !matches!(cli.command, Commands::Update | Commands::CheckUpdate) {
+fn print_skill(name: &str, json: bool) -> Result<()> {
+    skill::validate_name(name)?;
+    if json {
+        serde_json::to_writer(
+            io::stdout().lock(),
+            &serde_json::json!({
+                "schema_version": skill::CLI_SCHEMA_VERSION,
+                "name": skill::SKILL_NAME,
+                "cli_version": env!("CARGO_PKG_VERSION"),
+                "skill_schema_version": skill::SKILL_SCHEMA_VERSION,
+                "content": skill::SKILL_CONTENT,
+                "path_in_repo": skill::SKILL_PATH_IN_REPO,
+            }),
+        )?;
+        println!();
+    } else {
+        let mut stdout = io::stdout().lock();
+        stdout.write_all(skill::SKILL_CONTENT.as_bytes())?;
+        stdout.flush()?;
+    }
+    Ok(())
+}
+
+fn list_skills(json: bool) -> Result<()> {
+    let metadata = skill::metadata();
+    if json {
+        serde_json::to_writer(
+            io::stdout().lock(),
+            &serde_json::json!({
+                "schema_version": skill::CLI_SCHEMA_VERSION,
+                "skills": [metadata],
+            }),
+        )?;
+        println!();
+    } else {
+        println!("{}\t{}", metadata.name, metadata.description);
+    }
+    Ok(())
+}
+
+fn install_skill(
+    name: &str,
+    platform: skill::Platform,
+    root: Option<PathBuf>,
+    dry_run: bool,
+    force: bool,
+    json: bool,
+) -> Result<()> {
+    let results = skill::install(name, platform, &resolve_target_root(root)?, dry_run, force)?;
+    if json {
+        serde_json::to_writer(
+            io::stdout().lock(),
+            &serde_json::json!({
+                "schema_version": skill::CLI_SCHEMA_VERSION,
+                "dry_run": dry_run,
+                "results": results,
+            }),
+        )?;
+        println!();
+    } else {
+        for result in results {
+            println!(
+                "{} {} skill at {}",
+                result.action, result.platform, result.path
+            );
+        }
+    }
+    Ok(())
+}
+
+#[derive(Serialize)]
+struct BuildProvenance {
+    kind: &'static str,
+    note: &'static str,
+}
+
+fn print_version(json: bool) -> Result<()> {
+    if json {
+        let commit = option_env!("GIT_SURGEON_GIT_COMMIT");
+        let provenance = if commit.is_some() {
+            BuildProvenance {
+                kind: "git",
+                note: "commit recorded at build time",
+            }
+        } else {
+            BuildProvenance {
+                kind: "tarball",
+                note: "no .git metadata or injected commit at build time",
+            }
+        };
+        serde_json::to_writer(
+            io::stdout().lock(),
+            &serde_json::json!({
+                "schema_version": skill::CLI_SCHEMA_VERSION,
+                "version": env!("CARGO_PKG_VERSION"),
+                "commit": commit,
+                "build_provenance": provenance,
+                "supported_schemas": [skill::CLI_SCHEMA_VERSION],
+                "skills": [skill::metadata()],
+            }),
+        )?;
+        println!();
+    } else {
+        println!("git-surgeon {}", env!("CARGO_PKG_VERSION"));
+    }
+    Ok(())
+}
+
+fn main() {
+    let json_requested = std::env::args_os().any(|argument| argument == "--json");
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(error) => {
+            let display_only = matches!(
+                error.kind(),
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
+            );
+            if json_requested && !display_only {
+                eprintln!(
+                    "{}",
+                    serde_json::json!({
+                        "schema_version": skill::CLI_SCHEMA_VERSION,
+                        "error": {
+                            "code": "invalid_arguments",
+                            "message": error.to_string(),
+                        }
+                    })
+                );
+            } else {
+                let _ = error.print();
+            }
+            std::process::exit(if display_only { 0 } else { 1 });
+        }
+    };
+    let json = cli.json;
+    if let Err(error) = execute(cli) {
+        let system_error = error
+            .chain()
+            .any(|cause| cause.downcast_ref::<io::Error>().is_some());
+        if json {
+            eprintln!(
+                "{}",
+                serde_json::json!({
+                    "schema_version": skill::CLI_SCHEMA_VERSION,
+                    "error": {
+                        "code": if system_error { "io_error" } else { "command_error" },
+                        "message": format!("{error:#}"),
+                    }
+                })
+            );
+        } else {
+            eprintln!("Error: {error:#}");
+        }
+        std::process::exit(if system_error { 2 } else { 1 });
+    }
+}
+
+fn execute(cli: Cli) -> Result<()> {
+    if cli.json
+        && !matches!(
+            &cli.command,
+            Commands::Skill { .. } | Commands::Version | Commands::InstallSkill { .. }
+        )
+    {
+        bail!("--json is supported only by skill, version, and install-skill commands");
+    }
+
+    // Discovery and installation must remain deterministic and network-free.
+    if !matches!(
+        &cli.command,
+        Commands::Update
+            | Commands::CheckUpdate
+            | Commands::Version
+            | Commands::Skill { .. }
+            | Commands::InstallSkill { .. }
+    ) {
         update::check_and_notify();
     }
 
@@ -402,24 +633,66 @@ fn main() -> Result<()> {
         } => {
             hunk::squash(&commit, &message.join("\n\n"), force, !no_preserve_author)?;
         }
+        Commands::Version => print_version(cli.json)?,
+        Commands::Skill { command } => match command {
+            SkillCommands::List => list_skills(cli.json)?,
+            SkillCommands::Print { name } | SkillCommands::Show { name } => {
+                print_skill(&name, cli.json)?
+            }
+            SkillCommands::Install {
+                name,
+                target,
+                target_root,
+                dry_run,
+                force,
+            } => install_skill(&name, target, target_root, dry_run, force, cli.json)?,
+        },
         Commands::Update => update::run()?,
         Commands::CheckUpdate => update::run_background_check()?,
         Commands::InstallSkill {
             claude,
+            pi,
             opencode,
             codex,
+            target_root,
+            dry_run,
+            force,
         } => {
-            let mut platforms = Vec::new();
-            if claude {
-                platforms.push(skill::Platform::Claude);
+            let platforms = [
+                (claude, skill::Platform::Claude),
+                (pi, skill::Platform::Pi),
+                (opencode, skill::Platform::OpenCode),
+                (codex, skill::Platform::Codex),
+            ];
+            let selected: Vec<_> = platforms
+                .into_iter()
+                .filter_map(|(enabled, platform)| enabled.then_some(platform))
+                .collect();
+            if selected.is_empty() {
+                bail!(
+                    "at least one platform flag is required (--claude, --pi, --opencode, --codex)"
+                );
             }
-            if opencode {
-                platforms.push(skill::Platform::OpenCode);
+            let root = resolve_target_root(target_root)?;
+            let results = skill::install_many(skill::SKILL_NAME, &selected, &root, dry_run, force)?;
+            if cli.json {
+                serde_json::to_writer(
+                    io::stdout().lock(),
+                    &serde_json::json!({
+                        "schema_version": skill::CLI_SCHEMA_VERSION,
+                        "dry_run": dry_run,
+                        "results": results,
+                    }),
+                )?;
+                println!();
+            } else {
+                for result in results {
+                    println!(
+                        "{} {} skill at {}",
+                        result.action, result.platform, result.path
+                    );
+                }
             }
-            if codex {
-                platforms.push(skill::Platform::Codex);
-            }
-            skill::install_skill(&platforms)?;
         }
     }
 

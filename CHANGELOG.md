@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Make the binary the discoverable source of truth for its companion skill with
+  deterministic `skill list|print|show|install` commands, structured metadata,
+  safe managed-file upgrades, dry runs, and explicit target roots.
+- Add first-class pi skill installation while preserving Claude Code, OpenCode,
+  Codex, and the legacy `install-skill` command.
+- Add structured `version --json` output with build provenance, schema support,
+  and the embedded skill catalog.
+
 ## v0.1.17 (2026-05-25)
 
 - Print confirmed hunk IDs only after hunk operations succeed, so failed commits

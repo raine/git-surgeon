@@ -89,16 +89,37 @@ brew install raine/git-surgeon/git-surgeon
 
 ### 2. Install the agent skill
 
+The binary owns and embeds the canonical `git-surgeon` skill, keeping its
+instructions synchronized with the installed CLI. Install it directly for your
+agent runtime:
+
 ```bash
 # Claude Code
-git-surgeon install-skill --claude
+git-surgeon skill install --target claude
+
+# pi
+git-surgeon skill install --target pi
 
 # OpenCode
-git-surgeon install-skill --opencode
+git-surgeon skill install --target opencode
 
 # Codex
-git-surgeon install-skill --codex
+git-surgeon skill install --target codex
+
+# Every supported runtime
+git-surgeon skill install --target all
 ```
+
+Use `--target-root <PATH>` for an explicit home/root, `--dry-run` to preview,
+and `--force` to deliberately replace a modified, unmanaged, or newer skill.
+Without `--force`, the installer only creates new files, leaves identical files
+alone, and safely upgrades older files it manages. Discover or inspect the
+embedded source without writing files with `git-surgeon skill list`,
+`git-surgeon skill print git-surgeon`, or `git-surgeon skill show git-surgeon`.
+Each supports `--json` where structured output is useful.
+
+The legacy `install-skill --claude|--pi|--opencode|--codex` form remains
+supported and uses the same safe installer.
 
 Alternatively, for Claude Code via the plugin marketplace:
 
@@ -130,6 +151,8 @@ to stage individual hunks instead of entire files.
 | [`undo`](#undo)           | Reverse-apply hunks from a commit                      |
 | [`split`](#split)         | Split a commit into multiple commits by hunk selection |
 | [`move`](#move)           | Move a commit to a different position in history       |
+| `skill`                   | Discover, inspect, and safely install the embedded skill |
+| `version`                 | Show CLI/schema version and embedded skill metadata    |
 | [`update`](#update)       | Update git-surgeon to the latest version               |
 
 ## Picking the right folding command

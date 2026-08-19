@@ -13,6 +13,7 @@ include = [
     "/skills/**/*",
     "/Cargo.toml",
     "/Cargo.lock",
+    "/build.rs",
     "/CHANGELOG.md",
     "/LICENSE",
     "/README.md",

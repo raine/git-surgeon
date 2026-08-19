@@ -1,7 +1,11 @@
 ---
 name: git-surgeon
 description: Non-interactive hunk-level git staging, unstaging, discarding, undoing, fold, amend, squash, commit splitting, and commit reordering. Use when selectively staging, unstaging, discarding, reverting, squashing, splitting, or reordering individual diff hunks by ID instead of interactively.
+cli_version: "0.1.17"
+schema_version: 1
 ---
+
+<!-- Managed by git-surgeon skill install; cli_version=0.1.17; schema_version=1; do not edit. -->
 
 # git-surgeon
 

@@ -25,6 +25,8 @@ def repo(tmp_path):
     (tmp_path / ".gitkeep").touch()
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True)
+    # Tests refer to main explicitly; do not depend on the host's init.defaultBranch.
+    subprocess.run(["git", "branch", "-m", "main"], cwd=tmp_path, check=True)
     return tmp_path
 
 
